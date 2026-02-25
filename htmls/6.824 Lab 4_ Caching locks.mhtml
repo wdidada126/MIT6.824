@@ -1,0 +1,671 @@
+From: <Saved by Blink>
+Snapshot-Content-Location: https://pdos.csail.mit.edu/archive/6.824-2012/labs/lab-4.html
+Subject: 6.824 Lab 4: Caching locks
+Date: Wed, 25 Feb 2026 17:10:51 +0800
+MIME-Version: 1.0
+Content-Type: multipart/related;
+	type="text/html";
+	boundary="----MultipartBoundary--IBIu9E8isT7lqEEBIQVv293mJqovEEinJ7ByWUFL7y----"
+
+
+------MultipartBoundary--IBIu9E8isT7lqEEBIQVv293mJqovEEinJ7ByWUFL7y----
+Content-Type: text/html
+Content-ID: <frame-9A9D98D0A5E4C99E072042C5A7F7F044@mhtml.blink>
+Content-Transfer-Encoding: quoted-printable
+Content-Location: https://pdos.csail.mit.edu/archive/6.824-2012/labs/lab-4.html
+
+<!--?xml version=3D"1.0" encoding=3D"utf-8"?--><!DOCTYPE html PUBLIC "-//W3=
+C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-=
+transitional.dtd"><html xmlns=3D"http://www.w3.org/1999/xhtml" data-eusoft-=
+scrollable-element=3D"1"><head><meta http-equiv=3D"Content-Type" content=3D=
+"text/html; charset=3DUTF-8"><link rel=3D"stylesheet" type=3D"text/css" hre=
+f=3D"cid:css-9f3c1877-78b8-44f5-96b3-f32ee436eb81@mhtml.blink" /><link rel=
+=3D"stylesheet" type=3D"text/css" href=3D"cid:css-31bcc570-e55b-4e23-b3a8-c=
+9bbd5e08b60@mhtml.blink" />
+  <meta name=3D"generator" content=3D"HTML Tidy for Linux/x86 (vers 12 Apri=
+l 2005), see www.w3.org">
+  <link rel=3D"StyleSheet" href=3D"https://pdos.csail.mit.edu/archive/6.824=
+-2012/labs/style.css" type=3D"text/css">
+
+  <title>6.824 Lab 4: Caching locks</title>
+</head>
+
+<body>
+  <div align=3D"center">
+    <h2><a href=3D"https://pdos.csail.mit.edu/archive/6.824-2012/index.html=
+">6.824</a> - Spring 2012</h2>
+  </div>
+
+  <div align=3D"center">
+      <h1>6.824 Lab 4: Caching locks</h1>
+  </div>
+
+  <div align=3D"center">
+    <h3>Due: Friday, March 16th, 5:00pm</h3>
+  </div>
+  <hr>
+
+<h3>Introduction</h3>
+
+<p>In this lab you will build a lock server and client that cache
+locks at the client, reducing the load on the server and improving
+client performance. For example, suppose that an application using YFS
+creates 100 files in a directory. Your Lab 3 <tt>yfs_client</tt> will
+probably send 100 <tt>acquire</tt> and <tt>release</tt> RPCs for=20
+the directory's lock.
+This lab will modify the lock client and server so that the lock
+client sends (in the common case) just one <tt>acquire</tt> RPC for the
+directory's lock, and caches the lock thereafter, only releasing
+it if another <tt>yfs_client</tt> needs it.
+
+</p><p>The challenge in the lab is the protocol between the clients and
+the server. For example, when client 2 acquires a lock that client 1
+has cached, the server must revoke that lock from client 1 by sending
+a <tt>revoke</tt> RPC to client 1. The server can give client 2 the lock=20
+only after client 1 has released the lock, which may be a long time after
+sending the revoke (e.g., if a thread on client 1 holds the lock for a
+long period).  The protocol is further complicated by the fact that
+concurrent RPC requests and replies may not be delivered in the
+same order in which they were sent.
+
+</p><p>We'll test your caching lock server and client by seeing whether it
+reduces the amount of lock RPC traffic that your <tt>yfs_client</tt>
+generates. We will test with both RPC_LOSSY set to 0 and RPC_LOSSY set
+to 5.</p>
+
+<h3>Getting Started</h3>
+
+Since you are building on the past labs, ensure the code in your Lab 3
+directory passes all tests for Labs 1, 2 and 3 before starting=20
+this lab.
+
+<p>Begin by merging your solution to lab 3 with the new code for lab 4:
+
+</p><pre>% <b>cd ~/lab</b>
+% <b>git commit -am 'my solution to lab3'</b>
+Created commit ...
+% <b>git pull</b>
+remote: Generating pack...
+...
+% <b>git checkout -b lab4 origin/lab4</b>
+Branch lab5 set up to track remote branch refs/remotes/origin/lab5.
+Switched to a new branch "lab4"
+% <b>git merge lab3</b>
+</pre>
+
+<p>This will add these new files to your <tt>lab</tt> directory:
+
+</p><ul>
+<li><tt>lock_client_cache.{cc,h}</tt>: This will be the new lock
+client class that the <tt>lock_tester</tt> and your
+<tt>yfs_client</tt> should instantiate.
+<tt>lock_client_cache</tt> must
+receive <tt>revoke</tt> RPCs from the server (as well as <tt>retry</tt> RPC=
+s,
+explained below), so
+we have provided you with=20
+code in the <tt>lock_client_cache</tt> constructor that picks a random
+port to listen on, creates an <tt>rpcs</tt> for that port, and constructs
+an <tt>id</tt> string with the client's IP address and port
+that the client can send to the server when
+requesting a lock.
+
+<p>Note that although <tt>lock_client_cache</tt> extends the
+<tt>lock_client</tt> class from Lab 1, you probably won't be able to
+reuse any code from the parent class; we use a subclass here so that
+<tt>yfs_client</tt> can use the two implementations interchangeably.
+However, you might find some member variables useful (such as
+<tt>lock_client</tt>'s RPC client <tt>cl</tt>).
+
+</p></li><li><tt>lock_server_cache.{cc,h}</tt>: Similarly, you will not
+necessarily be able to use any code
+from <tt>lock_server</tt>.
+<tt>lock_server_cache</tt> should be instantiated
+by <tt>lock_smain.cc</tt>, which should also register the RPC handlers
+for the new class.
+
+<p>
+</p></li><li><tt>handle.{cc,h}</tt>: this class maintains a cache of RPC
+connections to other servers. You will find it useful in your
+<tt>lock_server_cache</tt> when sending <tt>revoke</tt> and <tt>retry</tt>=
+=20
+RPCs to lock clients. Look at the comments at the start of <tt>handle.h</tt=
+>.
+You can pass the lock client's <tt>id</tt> string to <tt>handle</tt>
+to tell it which lock client to talk to.
+
+<p>
+</p></li><li><tt>tprintf.h</tt>: this file defines a macro that prints
+out the time when a printf is invoked. You may find this helpful
+in debugging distributed deadlocks.
+
+</li></ul>
+
+<p>
+We have also made changes to the following files:
+
+</p><ul>
+
+<li><tt>GNUmakefile</tt>: links <tt>lock_client_cache</tt>
+into <tt>lock_tester</tt> and <tt>yfs_client</tt>, and link
+<tt>lock_server_cache</tt> into <tt>lock_server</tt>.
+
+</li><li><tt>lock_tester.cc</tt>: creates
+<tt>lock_client_cache</tt> objects.
+
+</li><li><tt>lock_protocol.h</tt>:=20
+Contains a
+second protocol for the RPCs that the lock server sends to the client.
+
+</li><li><tt>lock_smain.cc</tt>: #include <tt>lock_server_cache.h</tt>
+  instead of <tt>lock_server.h</tt>
+
+</li></ul>
+
+<h3>Step One: Design the Protocol</h3>
+
+Your lock client and lock server will each keep some state about
+each lock, and will have a protocol by which they change that
+state. Start by making a design (on paper) of the states, protocol,
+and how the protocol messages generate state transitions.
+Do this before you implement anything (though be prepared to
+change your mind in light of experience).
+
+<p>Here is the set of states we recommend for the client:
+</p><ul>
+<li><i>none</i>: client knows nothing about this lock
+</li><li><i>free</i>: client owns the lock and no thread has it=20
+</li><li><i>locked</i>: client owns the lock and a thread has it
+</li><li><i>acquiring</i>: the client is acquiring ownership
+</li><li><i>releasing</i>: the client is releasing ownership
+</li></ul>
+
+<p>A single client may have multiple threads waiting for the
+same lock,
+but only one thread per client ever needs to be interacting with
+the server; once that thread has acquired and released the lock it can
+wake up other threads, one of which can acquire the lock (unless the lock
+has been revoked and released back to the server).  If you need a way
+to identify a thread, you can use its thread id (tid), which you can
+get using <tt>pthread_self()</tt>.
+
+</p><p>When a client asks for a lock with an <tt>acquire</tt> RPC, the serv=
+er
+  grants the lock and responds with OK if the lock is not owned by
+  another client (i.e., the lock is free).=20
+  If the lock is not free, and there are other clients
+  waiting for the lock, the server responds with a RETRY.=20
+  Otherwise, the server sends a <tt>revoke</tt> RPC to the owner of the
+  lock, and waits for the lock to be released by the owner. Finally,=20
+  the server sends a <tt>retry</tt> to the next waiting=20
+  client (if any), grants the lock and responds with OK.
+<!--  At some
+  point later (after another client has released the lock using a
+  <tt>release</tt> RPC), the server sends the client a <tt>retry</tt>
+  RPC. The <tt>retry</tt> RPC informs the client that the lock may be
+  free, and therefore it ought to try another <tt>acquire</tt> RPC.-->
+
+</p><p>
+<font color=3D"red">Note that RETRY and <tt>retry</tt> are two different
+things.</font>  RETRY is the value the server returns for
+a <tt>acquire</tt> RPC to indicate that the requested lock is not
+currently available.  <tt>retry</tt> is the RPC that
+the server sends the client which is scheduled to hold a previously=20
+requested lock next.
+
+</p><p>Once a client has acquired ownership of a lock, the client caches
+the lock (<i>i.e.</i>, it keeps the lock instead of sending
+a <tt>release</tt> RPC to the server when a
+thread releases the lock on the client). The client can grant the lock
+to other threads on the same client without interacting with the
+server.
+
+</p><p>The server sends the client a <tt>revoke</tt> RPC to get the lock ba=
+ck.
+This request tells the client that it should send the lock back to the
+server when it releases the lock or right now if no thread on the
+client is holding the lock.
+
+</p><p>
+The server's per-lock state should include whether it is held by
+some client, the ID (host name and port number) of that client,
+and the set of other clients waiting for that lock.  The server
+needs to know the holding client's ID in order to send it a
+revoke message when another client wants the lock.
+The server needs to know the set of waiting clients in order
+to send one of them a <tt>retry</tt> RPC when the holder releases the lock.
+
+</p><p>
+For your convenience, we have defined a new
+RPC protocol called <tt>rlock_protocol</tt> in
+<tt>lock_protocol.h</tt> to use when sending RPCs from the server to
+the client.  This protocol contains definitions for the <tt>retry</tt> and
+<tt>revoke</tt> RPCs.
+
+</p><p>
+Hint: don't hold any mutexes while sending an RPC. An RPC can take
+a long time, and you don't want to force other threads to wait.
+Worse, holding mutexes during RPCs is an easy way to generate
+distributed deadlock.
+
+</p><p>The following questions might help you with your design (they are
+  in no particular order):
+</p><ul>
+<!--
+<li>Suppose the following happens: Client A releases a lock that
+  client B wants. The server sends a <tt>retry</tt> RPC to client
+  B. Then, before client B can send another <tt>acquire</tt> to the
+  server, client C sends an <tt>acquire</tt> to the server. What
+  happens in this case?
+
+<li>If the server receives an <tt>acquire</tt> for a lock that is
+  cached at another
+  client, what is that the handler going to do?  Remember the handler
+  shouldn't block or <tt>invoke</tt> RPCs.
+<li>If the server receives a <tt>release</tt> RPC, and there is an outstand=
+ing
+  <tt>acquire</tt> from another client, what is the handler going to do?
+  Remember again that the handler shouldn't block or <tt>invoke</tt> RPCs.
+<li>If a thread on the client is holding a lock, and a second thread
+  calls <tt>acquire()</tt>, but there has also been a <tt>revoke</tt>
+  for this lock, what
+  happens?  Other clients trying to acquire the lock should have a
+  fair chance of obtaining it; if two threads on the current node
+  keep competing for the lock, the node should not hold the lock forever.
+<li>If the server grants the lock to a client and it has a number of
+  other clients also interested in that lock, you may want to indicate
+  in the reply to the <tt>acquire</tt> that the client should return
+  the lock to the server as soon as the thread on the client calls
+  <tt>release()</tt>.  How would you keep track on the client that
+  the thread's <tt>release()</tt> also results in the lock being
+  returned to the server? (You could alternatively send
+  a <tt>revoke</tt> RPC immediately after granting the lock in this
+  case.)
+-->
+<li>If a thread on the client is holding a lock and a second thread
+  calls <tt>acquire()</tt>, what happens?  You shouldn't need to send an RP=
+C to
+  the server.
+
+</li><li>How do you handle a <tt>revoke</tt> on a client when a thread on t=
+he client
+  is holding the lock? How do you handle a <tt>retry</tt> showing up on the=
+=20
+  client before the response on the corresponding <tt>acquire</tt>?
+
+<p>
+Hint: a client may receive a <tt>revoke</tt> RPC for a lock before it has
+received an OK response from its <tt>acquire</tt> RPC. Your client code wil=
+l=20
+need to remember the fact that the revoke has arrived, and release
+the lock as soon as you are done with it. The same situation can
+arise with <tt>retry</tt> RPCs, which can arrive at the client before the
+corresponding acquire returns the RETRY failure code.
+
+</p></li><li>How do you handle a <tt>revoke</tt> showing up on the client b=
+efore the
+  response on the corresponding <tt>acquire</tt>?
+
+<!--
+<li>When do you increase a sequence number on the client?  Do you have
+  one sequence number per <tt>lock_client</tt> object or one per client
+  machine?-->
+
+
+</li></ul>
+
+<h3>Step Two: Lock Client and Server, and Testing with RPC_LOSSY=3D0</h3>
+
+<p>A reasonable first step would be to implement the basic design of
+your <tt>acquire</tt> protocol on both the client and the server, including
+having the server send <tt>revoke</tt> messages to the holder of a lock if
+another client requests it, and <tt>retry</tt> messages to the next
+waiting client.
+<!--This will involve registering RPC
+handlers on the client, and devising a way for the server to receive
+and remember each client's IP address and port (<i>i.e.</i>, the
+<i>id</i> variable in <tt>lock_client_cache</tt>) and using it
+to send the client RPCs.-->
+
+</p><p>Next you'll probably want to implement the <tt>release</tt> code pat=
+h on
+both the client and the server.  Of course, the client should only
+inform the server of the release if the lock has been revoked. =20
+<!--This
+will also involve having the server send a <tt>retry</tt> RPC to the next
+client in line waiting for the lock.-->
+
+</p><p><font color=3D"red">Also make sure you instantiate a <tt>lock_server=
+_cache</tt> object
+in <tt>lock_smain.cc</tt>, and correctly register the RPC handlers.</font>
+
+</p><p>Once you have your full protocol implemented, you can run it using
+the lock tester, just as in <a href=3D"https://pdos.csail.mit.edu/archive/6=
+.824-2012/labs/lab-1.html">Lab 1</a>.  For now,
+don't bother testing with loss:
+
+</p><pre>% <b>export RPC_LOSSY=3D0</b>
+% <b>./lock_server 3772</b>
+</pre>
+
+<p>
+Then, in another terminal:
+
+</p><pre>% <b>./lock_tester 3772</b>
+</pre>
+
+<p>Run <tt>lock_tester</tt>.  You should pass all tests and see no timeouts=
+.
+You can hit Ctrl-C in the server's window to stop it.
+
+</p><p>A lock client might be holding cached locks when it exits.
+This may cause another run of <tt>lock_tester</tt> using the
+same <tt>lock_server</tt> to fail when the lock server tries
+to send revokes to the previous client. <font color=3D"red">To avoid this p=
+roblem without worrying about
+cleaning up, you must restart the <tt>lock_server</tt> for each run of
+<tt>lock_tester</tt>.  </font>
+
+</p><h3>Step Three: Testing the Lock Client and Server with RPC_LOSSY=3D5</=
+h3>
+
+<p>Now that it works without loss, you should try testing with
+<tt>RPC_LOSSY=3D5</tt>.  Here you may discover problems with
+reordered RPCs and responses.
+
+</p><pre>% <b>export RPC_LOSSY=3D5</b>
+% <b>./lock_server 3772</b>
+</pre>
+
+<p>
+Then, in another terminal:
+
+</p><pre>% <b>export RPC_LOSSY=3D5</b>
+% <b>./lock_tester 3772</b>
+</pre>
+
+<p>
+<font color=3D"red">Again, you must restart the <tt>lock_server</tt> for ea=
+ch run of
+<tt>lock_tester</tt>.  </font>
+
+</p><h3>Step Four: Run File System Tests</h3>
+
+<p>In the constructor for your <tt>yfs_client</tt>, you should now
+instantiate a <tt>lock_client_cache</tt> object, rather than a
+<tt>lock_client</tt> object.  You will also have to include
+<tt>lock_client_cache.h</tt>.  Once you do that, your YFS should just
+work under all the <a href=3D"https://pdos.csail.mit.edu/archive/6.824-2012=
+/labs/lab-3.html">Lab 3</a> tests.  We will run
+your code against all 3 tests (a, b, and c) from Lab 3.
+
+</p><p>You should also compare running your YFS code with the two
+different lock clients and servers, with RPC count enabled at the lock
+server.  For this reason, it would be helpful to keep your Lab 3 code
+around and intact, the way it was when you submitted it.
+As described below,
+you can turn on RPC statistics with the <tt>RPC_COUNT</tt> environment
+variable.  Look for a dramatic drop in the number of <tt>acquire</tt> (0x70=
+01)
+RPCs between your Lab 3 and Lab 4 code during the <tt>test-lab-3-c</tt> tes=
+t.
+
+</p><p>The file system tests should pass with RPC_LOSSY set as
+well. You can pass a loss parameter to <tt>start.sh</tt> and it will
+enable RPC_LOSSY automatically:
+
+</p><pre>% <b>./start.sh 5</b>          # sets RPC_LOSSY to 5
+</pre>
+
+If you're having trouble, make sure that the Lab 2 tester
+passes. If it doesn't, then the issues are most likely with YFS under
+RPC_LOSSY, rather than your caching lock client.
+
+<p> <font color=3D"red">Please restart all the servers using <tt>stop.sh</t=
+t> and
+<tt>start.sh</tt> for each run of each test.  </font>
+
+</p><h3>Evaluation Criteria</h3>
+
+<p>Our measure of performance is the number of <tt>acquire</tt> RPCs sent
+to your lock server while running <tt>yfs_client</tt> and
+<tt>test-lab-3-c</tt>.
+
+</p><p>
+The RPC library has a feature that counts
+unique RPCs arriving at the server.  You can set the environment variable
+<tt>RPC_COUNT</tt> to <i>N</i> before you launch a server process, and it w=
+ill
+print out RPC statistics every <i>N</i> RPCs.  For example, in
+the <tt>bash</tt> shell you could do:
+
+</p><pre>% <b>export RPC_COUNT=3D25</b>
+% <b>./lock_server 3772</b>
+RPC STATS: 7001:23 7002:2=20
+...
+</pre>
+
+This means that the RPC with the procedure number 0x7001
+(<tt>acquire</tt> in the original <tt>lock_protocol.h</tt> file) has
+been called 23 times, while RPC 0x7002 (<tt>release</tt>) has been
+called twice.
+
+<p>
+<tt>test-lab-3-c</tt>
+creates two subdirectories and
+creates/deletes 100 files in each directory, using each directory
+through only one of the two YFS clients.
+You should count the <tt>acquire</tt> RPCs for your lab 3 and for your
+lab 4. If your lab 4 produces a factor of 10 fewer <tt>acquire</tt> RPCs,
+then you are doing a good job.
+This performance goal is vague
+because the exact numbers depend a bit on how you use locks
+in <tt>yfs_client</tt>.
+
+</p><p>
+We will check the following:
+
+</p><ul>
+<li> Your caching lock server passes <tt>lock_tester</tt> with
+  RPC_LOSSY=3D0 and RPC_LOSSY=3D5.
+</li><li> Your file system using the caching lock client passes all the Lab
+  3 tests (a, b, and c) with RPC_LOSSY=3D0 and RPC_LOSSY=3D5.
+</li><li>Your lab 4 code generates about a tenth as many <tt>acquire</tt> R=
+PCs
+  as your lab 3 code on <tt>test-lab-3-c</tt>.
+</li></ul>
+
+<h3>Collaboration policy</h3>
+
+<p>You are welcome (and encouraged!) to discuss design questions
+with other students or on the 6.824 discussion list.
+However, you must write all the code you hand
+in for the programming assignments, except for code that we give
+you as part of the assignment. You are not allowed to look at
+anyone else's solution (and you're not allowed to look at
+solutions from previous years). You may discuss the assignments
+with other students, but you may not look at or copy each others'
+code.
+
+</p><h3>Handin procedure</h3>
+
+Email your code as a gzipped tar file to <a href=3D"mailto:6.824-submit@pdo=
+s.csail.mit.edu">6.824-submit@pdos.csail.mit.edu</a>
+by the deadline at the top of the page.  To do this, execute these
+commands:
+
+<pre>% <b>cd ~/lab</b>
+% <b>./stop.sh</b>
+% <b>make clean</b>
+% <b>rm core*</b>
+% <b>rm *log</b>
+% <b>cd ..</b>
+% <b>tar czvf `whoami`-lab4.tgz lab/</b>
+</pre>
+
+or
+
+<pre>% <b>cd ~/6.824/lab</b>
+% <b>make handin</b>
+</pre>
+
+That should produce a file called <tt>[your_user_name]-lab4.tgz</tt> in you=
+r
+<tt>lab/</tt> directory.  Attach that file to an email and send it to the 6=
+.824
+submit address.
+<hr>
+
+<address>
+Please post questions or comments on <a href=3D"http://piazza.com/">Piazza<=
+/a>.<br>
+
+Back to <a href=3D"http://pdos.csail.mit.edu/6.824/">6.824 home</a>.
+</address>
+  <!--  LocalWords:  ccfs filehandle RPCs cd mkdir cp wget nc cc blockdbd D=
+BG dir
+ -->
+  <!--  LocalWords:  localhost blockdbc blockdb ihash fs callback
+ -->
+
+
+</body><eusoft-chrome-extension-root-en id=3D"eusoft-chrome-extension-id-en=
+" _nghost-ng-c2546567076=3D"" ng-version=3D"18.2.13"><template _ngcontent-n=
+g-c2546567076=3D""></template><!----><!----><!----><app-word-hint-render _n=
+gcontent-ng-c2546567076=3D"" _nghost-ng-c3319869249=3D""><template _ngconte=
+nt-ng-c3319869249=3D""></template><!----><!----></app-word-hint-render><app=
+-translate-render _ngcontent-ng-c2546567076=3D"" _nghost-ng-c2607817495=3D"=
+"><template _ngcontent-ng-c2607817495=3D""></template><!----><translate-ana=
+lyzer _ngcontent-ng-c2607817495=3D""><template></template></translate-analy=
+zer></app-translate-render><app-capture-word _ngcontent-ng-c2546567076=3D""=
+ class=3D"eusoft-chrome-extension-capture-word-container ng-tns-c2615027859=
+-0 ng-star-inserted"><template shadowmode=3D"open"><!----><!----><div class=
+=3D"eusoft-eudic-chrome-extension-explain-popover-container-class ng-tns-c2=
+615027859-0" data-content-script-theme=3D"light"><!----></div></template></=
+app-capture-word><app-translate-failed-retry _ngcontent-ng-c2546567076=3D""=
+ _nghost-ng-c3081775404=3D""><!----></app-translate-failed-retry><!----><!-=
+---></eusoft-chrome-extension-root-en></html>
+------MultipartBoundary--IBIu9E8isT7lqEEBIQVv293mJqovEEinJ7ByWUFL7y----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: https://pdos.csail.mit.edu/archive/6.824-2012/labs/style.css
+
+@charset "utf-8";
+
+body { color: black; background-color: white; font-family: sans-serif; }
+
+.title { text-align: center; }
+
+.subtitle { text-align: center; font-style: italic; }
+
+.author { text-align: center; }
+
+code { font-size: 120%; color: green; }
+
+tt { font-size: 120%; }
+
+pre { font-size: 100%; color: green; margin: 1em; border: 1px dashed; paddi=
+ng: 1em; }
+
+.classic { color: black; }
+------MultipartBoundary--IBIu9E8isT7lqEEBIQVv293mJqovEEinJ7ByWUFL7y----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-31bcc570-e55b-4e23-b3a8-c9bbd5e08b60@mhtml.blink
+
+@charset "utf-8";
+
+.eusoft-eudic-translate-failed-container[_ngcontent-ng-c3081775404] { posit=
+ion: fixed !important; bottom: 50px !important; right: 50px !important; bor=
+der-radius: 5px !important; box-shadow: rgba(0, 0, 0, 0.08) 0px 6px 24px !i=
+mportant; z-index: 2147483647 !important; }
+
+.eusoft-eudic-translate-failed-content-script[_ngcontent-ng-c3081775404] { =
+border: 1px solid rgb(232, 232, 232) !important; background-color: rgb(248,=
+ 250, 254) !important; }
+
+html.light-en [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.light-fr [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.light-de [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.light-es [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.dark-en [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-contai=
+ner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(89, 89, 89) !importa=
+nt; background-color: rgb(33, 33, 37) !important; }
+
+html.dark-fr [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-contai=
+ner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(89, 89, 89) !importa=
+nt; background-color: rgb(33, 33, 37) !important; }
+
+html.dark-de [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-contai=
+ner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(89, 89, 89) !importa=
+nt; background-color: rgb(33, 33, 37) !important; }
+
+html.dark-es [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-contai=
+ner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(89, 89, 89) !importa=
+nt; background-color: rgb(33, 33, 37) !important; }
+
+html.sepia-en [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.sepia-fr [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.sepia-de [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.sepia-es [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.green-en [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.green-fr [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.green-de [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.green-es [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+------MultipartBoundary--IBIu9E8isT7lqEEBIQVv293mJqovEEinJ7ByWUFL7y----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-9f3c1877-78b8-44f5-96b3-f32ee436eb81@mhtml.blink
+
+@charset "utf-8";
+
+.eudic-tippy-content-container[_ngcontent-ng-c2546567076] { max-width: 250p=
+x !important; }
+
+.eusoft-chrome-extension-popup-menu[_ngcontent-ng-c2546567076] { position: =
+fixed; z-index: 2147483647; top: 50%; }
+
+.eusoft-chrome-extension-popup-menu.eusoft-chrome-extension-popup-menu-left=
+[_ngcontent-ng-c2546567076] { left: 4px; }
+
+.eusoft-chrome-extension-popup-menu.eusoft-chrome-extension-popup-menu-righ=
+t[_ngcontent-ng-c2546567076] { right: 4px; }
+
+.eusoft-chrome-extension-mask-container[_ngcontent-ng-c2546567076] { backgr=
+ound-color: transparent; position: fixed; inset: 0px; z-index: 2147483646; }
+------MultipartBoundary--IBIu9E8isT7lqEEBIQVv293mJqovEEinJ7ByWUFL7y------

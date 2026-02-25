@@ -1,0 +1,406 @@
+From: <Saved by Blink>
+Snapshot-Content-Location: https://pdos.csail.mit.edu/archive/6.824-2012/labs/lab-8.html
+Subject: 6.824 Lab 8: Project
+Date: Wed, 25 Feb 2026 18:00:44 +0800
+MIME-Version: 1.0
+Content-Type: multipart/related;
+	type="text/html";
+	boundary="----MultipartBoundary--7NUjMgCgg1PYUyFvWnOgF286qscVjhJE8fFvNUbkLT----"
+
+
+------MultipartBoundary--7NUjMgCgg1PYUyFvWnOgF286qscVjhJE8fFvNUbkLT----
+Content-Type: text/html
+Content-ID: <frame-9A9D98D0A5E4C99E072042C5A7F7F044@mhtml.blink>
+Content-Transfer-Encoding: quoted-printable
+Content-Location: https://pdos.csail.mit.edu/archive/6.824-2012/labs/lab-8.html
+
+<!--?xml version=3D"1.0" encoding=3D"utf-8"?--><!DOCTYPE html PUBLIC "-//W3=
+C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-=
+transitional.dtd"><html xmlns=3D"http://www.w3.org/1999/xhtml" data-eusoft-=
+scrollable-element=3D"1"><head><meta http-equiv=3D"Content-Type" content=3D=
+"text/html; charset=3DUTF-8"><link rel=3D"stylesheet" type=3D"text/css" hre=
+f=3D"cid:css-91e2b1d3-d57a-4f0c-aeb8-7e9727738e6c@mhtml.blink" /><link rel=
+=3D"stylesheet" type=3D"text/css" href=3D"cid:css-8ea4d1b8-cd1d-4b86-a3fa-4=
+b7534403ef3@mhtml.blink" />
+  <meta name=3D"generator" content=3D"HTML Tidy for Linux/x86 (vers 12 Apri=
+l 2005), see www.w3.org">
+  <link rel=3D"StyleSheet" href=3D"https://pdos.csail.mit.edu/archive/6.824=
+-2012/labs/style.css" type=3D"text/css">
+
+  <title>6.824 Lab 8: Project</title>
+</head>
+
+<body>
+  <div align=3D"center">
+    <h2><a href=3D"https://pdos.csail.mit.edu/archive/6.824-2012/index.html=
+">6.824</a> - Spring 2012</h2>
+  </div>
+
+  <div align=3D"center">
+      <h1>6.824 Lab 8: Project</h1>
+  </div>
+
+  <div align=3D"center">
+    <h3>Due: Friday, May 11th, 5:00pm.</h3>
+  </div>
+  <hr>
+
+<h3>Introduction</h3>
+
+<p>
+As the final lab in 6.824, you will complete a small coding project of
+your choice related to the class material somehow, submit a short
+writeup on what you did, and present a demo to the class staff (and
+possibly the whole class).
+
+</p><p>
+You are free to choose any project you like, as long as it has
+something to do with distributed systems, consists of original work
+done for the class (<i>i.e.</i>, don't simply recycle a past research
+project and try to put a 6.824 spin on it), and is of an appropriate
+scope (see below).  We suggest that you take your now functional
+fault-tolerant, distributed file system and extend it in some
+interesting way.
+
+</p><p>
+We expect your
+project to continue in the tradition of the labs: find some real
+problem with an existing system (such as YFS), code up a solution
+to the problem, and present what you did.  See the "Examples" section
+for some possible projects.
+
+</p><h3>Requirements</h3>
+
+<p>
+Your project should meet the following requirements:
+
+</p><ul>
+
+<li><p><b>Collaboration</b>: Please do your project in a team of two
+or three people. You will
+submit one writeup per team.  If your team chooses to do a YFS-based
+project, you will have to choose one member's implementation as the
+starting codebase.  Free free to use Piazza to
+find a partner.
+
+</p><p>
+Please email <a href=3D"mailto:6.824-staff@pdos.csail.mit.edu">6.824-staff<=
+/a> by <b>5:00 pm
+on Tuesday, May 1</b> with the names of your team members and
+a few sentences describing what you plan to do.
+
+</p></li><li><p><b>Scope</b>: We expect the programming aspect of your proj=
+ect to
+be similar in difficulty to one of the 6.824 2-week labs, such as Lab
+4 or Lab 6, adjusted to reflect the number of students working on the
+project.  Please email the staff with your project idea if you'd
+like to know what we think about its suitability.  Note that while you
+will not be required to hand in your code for the project, you will
+have to meet with the TA and intelligently discuss what you did.
+
+</p><p>Again, the project must have some relation to the class material.
+Any YFS extension of suitable scope is fine, as is any other project
+related directly to one of the papers or topics covered in class.  If
+you have a project in mind that is only tangentially related, please
+check with us first.
+=20
+</p></li><li><p><b>Write-up</b>: A brief 1-page writeup on your project is =
+due
+by the lab deadline stated above.  This should explain what problem
+you solved, how you solved it, and how successful you were in solving
+it.  Please provide enough detail for us to get a sense of how much
+effort went into your project, but don't write a complete, formal
+research paper.  You may want to also include a measure of the number
+of lines of code you wrote.
+
+</p></li><li><p><b>TA Demos</b>: Each team will meet with the TA for five o=
+r ten
+minutes to discuss their project and to demonstrate their code.
+These meetings will take place on Monday, May 14th, or Wednesday, May
+16th. We will send out an announcement about
+scheduling these meetings when the deadline gets closer.
+
+</p></li><li><p><b>In-Class Demos</b>:
+The final lecture of the semester will be dedicated to
+project demos. There may not be enough time to fit all
+groups into 80 minutes; we will make a plan when we know how
+many groups there are.
+
+</p></li></ul>
+
+<h3>Examples</h3>
+
+Below are some example extensions to YFS that would make suitable
+projects.  Feel free to use one of these if you have no idea of=20
+your own.
+
+<ul>
+
+<li><p><b>Complete fault-tolerance</b>: Extend YFS to be tolerant of
+arbitrary client failures.  This will involve some plan of lock
+expiration (<i>e.g.</i>, leases), persistent logging of client
+operations, and crash recovery, all in the spirit of Frangipani.  You
+may also need to come up with a more robust scheme for RPC sequence
+numbers, as you don't want a restarted client to re-use the same
+sequence numbers it was using before it crashed.  You should also
+replicate your extent server using the Paxos-based replicated state
+machine from Lab 6, making your YFS impervious to failures at all
+levels.
+
+</p></li><li><p><b>Distributed storage</b>: At the moment your YFS
+implementation just uses a single extent server to store its data.  It
+would be much more useful, for load-balancing purposes, if YFS could
+spread its data across many extent servers.  You can implement the
+<a href=3D"ftp://ftp.digital.com/pub/DEC/SRC/publications/eklee/petal-paper=
+.pdf">
+Petal</a> design, consistent hashing as
+in <a href=3D"https://pdos.csail.mit.edu/archive/6.824-2012/papers/stoica-c=
+hord.pdf">Chord</a>,
+voting as in
+<a href=3D"http://www.hpl.hp.com/research/ssp/papers/2004-10-ASPLOS-FAB.pdf=
+">FAB</a>,
+or use a scheme of your own.  Show some benefit of this system
+under a real workload, either in terms of performance or fault
+tolerance.
+
+</p></li><li><p><b>Peer-to-peer data transfer</b>: Implement a protocol
+in which nodes
+do not have to write dirty extents back to the extent server, but can
+instead transfer them directly to the next YFS server that wants to
+access the extent.  You should also implement read/write locking,
+allowing multiple peers to access the extent for reading at the same
+time.  Demonstrate some scenarios where the new scheme outperforms the
+old scheme.
+
+</p></li><li><p><b>SUNDR</b>: Implement the strawman proposal
+of <a href=3D"https://pdos.csail.mit.edu/archive/6.824-2012/papers/li-sundr=
+.pdf">SUNDR</a> (plus whatever other
+optimizations you have time for) within the context of YFS, and
+demonstrate that the system provides fork consistency.  You will need
+to modify YFS to keep signed logs of extent accesses, and extend your
+FUSE interface to have some notion of a user and the user's associated
+keys.
+
+</p></li><li><p><b>Bandwidth- and disk-space efficient extent service</b>:
+Currently, your YFS implementation probably stores whole files as
+extents in memory, and returns the entire file on each get.  The goal
+in this project would be to reduce the network traffic between the
+extent server and its clients, as well as reducing the memory and disk
+usage of the extent server.  You should come up with an efficient
+scheme for laying out extents on disk (for example, use a single file
+on the native file system to store all of the extents, and do your
+best to reduce fragmentation of the space within that file); take both
+large and small files into consideration.  You may also want to use
+compression to limit the size of the data on disk.  Furthermore, there
+are known techniques for how to reduce bandwidth between the server
+and clients by sending only diffs of data, rather than the full extent
+(see
+the <a href=3D"http://pdos.csail.mit.edu/papers/lbfs:sosp01/lbfs.pdf">LBFS<=
+/a>
+paper, for example); you should implement some similar scheme for YFS.
+You may also want to consider storing files in blocks, rather than one
+huge extent, if you think that makes sense.  Demonstrate the
+performance and space benefits of your modifications.
+
+</p></li><li><p><b>Access control</b>: Implement a robust notion of access
+control in YFS.  As in the SUNDR project, you'll have to extent your
+FUSE interface to know about users (and groups!), and also make the
+appropriate extensions to your YFS data structures.  You'll also need
+to add support for any related file system calls
+(<i>i.e.</i>, <tt>chmod</tt>, <tt>chown</tt>, <tt>chgrp</tt>, etc).
+Once this is in place, you should consider encrypting the files on
+disk for per-user or per-group data privacy.
+
+</p></li><li><p><b>Disconnected operation</b>: Since your YFS server alread=
+y
+supports the caching of extents, you can imagine a version of YFS that
+will allow the user to make modifications to cached data, and create
+new files and directories, even if it cannot currently talk to the
+lock server or the extent server.  To implement this, you'll probably
+need to implement leases on locks, and come up with some plan for
+merging divergent extents once the client comes back online.  Check
+out
+the <a href=3D"http://www.cs.cmu.edu/~satya/docdir/coda.pdf">Coda</a>
+paper for inspiration on this topic.  A cool demo would be to mount
+YFS on a laptop (where the extent and lock servers are running on a
+server somewhere), cache some data locally, disconnect the laptop from
+the network, and continue working on the files.  Then once the laptop
+is back online, mount the directory from a different location and
+ensure the changes made offline have propagated to the extent server.
+
+</p></li></ul>
+
+<h3>Handin procedure</h3>
+
+<p>
+You need to email <a href=3D"mailto:6.824-staff@pdos.csail.mit.edu">6.824-s=
+taff</a> by <b>5:00 pm
+on Tuesday, May 1</b> with the names of your team members and
+a few sentences describing what you plan to do.
+
+</p><p>
+E-mail your writeup in PDF format
+to <a href=3D"mailto:6.824-submit@pdos.csail.mit.edu">6.824-submit@pdos.csa=
+il.mit.edu</a>
+by the deadline at the top of the page.  Please name the
+file <tt>&lt;username1-username2&gt;-project.[pdf,ps]</tt>. You will also
+need to schedule a meeting time with the TA on May 14th or 16th,
+and you should be prepared to give an in-class demo of your project on
+May 17th.
+
+</p><hr>
+
+<address>
+Please post questions or comments on <a href=3D"http://piazza.com/">Piazza<=
+/a>.<br>
+
+Back to <a href=3D"http://pdos.csail.mit.edu/6.824/">6.824 home</a>.
+</address>
+  <!--  LocalWords:  ccfs filehandle RPCs cd mkdir cp wget nc cc blockdbd D=
+BG dir
+ -->
+  <!--  LocalWords:  localhost blockdbc blockdb ihash fs callback
+ -->
+
+
+
+</body><eusoft-chrome-extension-root-en id=3D"eusoft-chrome-extension-id-en=
+" _nghost-ng-c2546567076=3D"" ng-version=3D"18.2.13"><template _ngcontent-n=
+g-c2546567076=3D""></template><!----><!----><!----><app-word-hint-render _n=
+gcontent-ng-c2546567076=3D"" _nghost-ng-c3319869249=3D""><template _ngconte=
+nt-ng-c3319869249=3D""></template><!----><!----></app-word-hint-render><app=
+-translate-render _ngcontent-ng-c2546567076=3D"" _nghost-ng-c2607817495=3D"=
+"><template _ngcontent-ng-c2607817495=3D""></template><!----><translate-ana=
+lyzer _ngcontent-ng-c2607817495=3D""><template></template></translate-analy=
+zer></app-translate-render><app-capture-word _ngcontent-ng-c2546567076=3D""=
+ class=3D"eusoft-chrome-extension-capture-word-container ng-tns-c2615027859=
+-0 ng-star-inserted"><template shadowmode=3D"open"><!----><!----><div class=
+=3D"eusoft-eudic-chrome-extension-explain-popover-container-class ng-tns-c2=
+615027859-0" data-content-script-theme=3D"light"><!----></div></template></=
+app-capture-word><app-translate-failed-retry _ngcontent-ng-c2546567076=3D""=
+ _nghost-ng-c3081775404=3D""><!----></app-translate-failed-retry><!----><!-=
+---></eusoft-chrome-extension-root-en></html>
+------MultipartBoundary--7NUjMgCgg1PYUyFvWnOgF286qscVjhJE8fFvNUbkLT----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: https://pdos.csail.mit.edu/archive/6.824-2012/labs/style.css
+
+@charset "utf-8";
+
+body { color: black; background-color: white; font-family: sans-serif; }
+
+.title { text-align: center; }
+
+.subtitle { text-align: center; font-style: italic; }
+
+.author { text-align: center; }
+
+code { font-size: 120%; color: green; }
+
+tt { font-size: 120%; }
+
+pre { font-size: 100%; color: green; margin: 1em; border: 1px dashed; paddi=
+ng: 1em; }
+
+.classic { color: black; }
+------MultipartBoundary--7NUjMgCgg1PYUyFvWnOgF286qscVjhJE8fFvNUbkLT----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-8ea4d1b8-cd1d-4b86-a3fa-4b7534403ef3@mhtml.blink
+
+@charset "utf-8";
+
+.eusoft-eudic-translate-failed-container[_ngcontent-ng-c3081775404] { posit=
+ion: fixed !important; bottom: 50px !important; right: 50px !important; bor=
+der-radius: 5px !important; box-shadow: rgba(0, 0, 0, 0.08) 0px 6px 24px !i=
+mportant; z-index: 2147483647 !important; }
+
+.eusoft-eudic-translate-failed-content-script[_ngcontent-ng-c3081775404] { =
+border: 1px solid rgb(232, 232, 232) !important; background-color: rgb(248,=
+ 250, 254) !important; }
+
+html.light-en [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.light-fr [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.light-de [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.light-es [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.dark-en [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-contai=
+ner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(89, 89, 89) !importa=
+nt; background-color: rgb(33, 33, 37) !important; }
+
+html.dark-fr [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-contai=
+ner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(89, 89, 89) !importa=
+nt; background-color: rgb(33, 33, 37) !important; }
+
+html.dark-de [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-contai=
+ner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(89, 89, 89) !importa=
+nt; background-color: rgb(33, 33, 37) !important; }
+
+html.dark-es [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-contai=
+ner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(89, 89, 89) !importa=
+nt; background-color: rgb(33, 33, 37) !important; }
+
+html.sepia-en [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.sepia-fr [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.sepia-de [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.sepia-es [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.green-en [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.green-fr [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.green-de [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.green-es [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+------MultipartBoundary--7NUjMgCgg1PYUyFvWnOgF286qscVjhJE8fFvNUbkLT----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-91e2b1d3-d57a-4f0c-aeb8-7e9727738e6c@mhtml.blink
+
+@charset "utf-8";
+
+.eudic-tippy-content-container[_ngcontent-ng-c2546567076] { max-width: 250p=
+x !important; }
+
+.eusoft-chrome-extension-popup-menu[_ngcontent-ng-c2546567076] { position: =
+fixed; z-index: 2147483647; top: 50%; }
+
+.eusoft-chrome-extension-popup-menu.eusoft-chrome-extension-popup-menu-left=
+[_ngcontent-ng-c2546567076] { left: 4px; }
+
+.eusoft-chrome-extension-popup-menu.eusoft-chrome-extension-popup-menu-righ=
+t[_ngcontent-ng-c2546567076] { right: 4px; }
+
+.eusoft-chrome-extension-mask-container[_ngcontent-ng-c2546567076] { backgr=
+ound-color: transparent; position: fixed; inset: 0px; z-index: 2147483646; }
+------MultipartBoundary--7NUjMgCgg1PYUyFvWnOgF286qscVjhJE8fFvNUbkLT------

@@ -1,0 +1,455 @@
+From: <Saved by Blink>
+Snapshot-Content-Location: https://pdos.csail.mit.edu/archive/6.824-2012/labs/lab-5.html
+Subject: 6.824 Lab 5: Caching Extent Server + Consistency
+Date: Wed, 25 Feb 2026 17:10:57 +0800
+MIME-Version: 1.0
+Content-Type: multipart/related;
+	type="text/html";
+	boundary="----MultipartBoundary--9pHIHkHfgY8343jhYf2Lq9wlTdSonxaclb7Tn1MxrS----"
+
+
+------MultipartBoundary--9pHIHkHfgY8343jhYf2Lq9wlTdSonxaclb7Tn1MxrS----
+Content-Type: text/html
+Content-ID: <frame-9A9D98D0A5E4C99E072042C5A7F7F044@mhtml.blink>
+Content-Transfer-Encoding: quoted-printable
+Content-Location: https://pdos.csail.mit.edu/archive/6.824-2012/labs/lab-5.html
+
+<!--?xml version=3D"1.0" encoding=3D"utf-8"?--><!DOCTYPE html PUBLIC "-//W3=
+C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-=
+transitional.dtd"><html xmlns=3D"http://www.w3.org/1999/xhtml" data-eusoft-=
+scrollable-element=3D"1"><head><meta http-equiv=3D"Content-Type" content=3D=
+"text/html; charset=3DUTF-8"><link rel=3D"stylesheet" type=3D"text/css" hre=
+f=3D"cid:css-c470d2e9-2342-4ba1-a4e4-c62505ecaa13@mhtml.blink" /><link rel=
+=3D"stylesheet" type=3D"text/css" href=3D"cid:css-8c726608-99d0-424f-8a94-4=
+61dd94a5abe@mhtml.blink" />
+  <meta name=3D"generator" content=3D"HTML Tidy for Linux/x86 (vers 12 Apri=
+l 2005), see www.w3.org">
+  <link rel=3D"StyleSheet" href=3D"https://pdos.csail.mit.edu/archive/6.824=
+-2012/labs/style.css" type=3D"text/css">
+
+  <title>6.824 Lab 5: Caching Extent Server + Consistency</title>
+</head>
+
+<body>
+  <div align=3D"center">
+    <h2><a href=3D"https://pdos.csail.mit.edu/archive/6.824-2012/index.html=
+">6.824</a> - Spring 2012</h2>
+  </div>
+
+  <div align=3D"center">
+      <h1>6.824 Lab 5: Caching Extents</h1>
+  </div>
+
+  <div align=3D"center">
+    <h3>Due: Friday, March 30th, 5:00pm</h3>
+  </div>
+  <hr>
+
+<h3>Introduction</h3>
+
+<p>In this lab you will modify YFS to cache extents,
+reducing the load on the extent server and improving YFS
+performance. The main challenge is to ensure consistency of extents
+cached at different <tt>yfs_client</tt>s: to make sure that
+each <tt>yfs_client</tt> sees extent data that reflects the
+latest modifications by other clients.
+To achieve consistency we will use the
+caching lock service from <a href=3D"https://pdos.csail.mit.edu/archive/6.8=
+24-2012/labs/lab-4.html">Lab 4</a>.
+
+</p><p>First you'll add a local <i>write-back</i> extent cache to each exte=
+nt
+client. The extent client will serve all extent operations from this
+cache; the extent client will contact the extent server only to fetch an
+extent (or the attribute of the extent) that is not present on the client. =
+Then you'll make the caches
+at different clients consistent by forcing write-back of the dirty
+cached extent associated with a filehandle (and deletion of the clean
+extent) when you release the lock on that filehandle.
+
+</p><p>Your client will be a success if it manages to operate out of its
+local extent and lock cache when reading/writing files and directories
+that other hosts aren't looking at, but maintains correctness when the
+same files and directories are concurrently read and updated by
+multiple clients.</p>
+
+<h3>Getting Started</h3>
+
+<p>Begin by initializing your Lab 5 branch with your implementation
+from <a href=3D"https://pdos.csail.mit.edu/archive/6.824-2012/labs/lab-4.ht=
+ml">Lab 4</a>.  There is no new code for this
+lab, except for an update to the makefile to build this lab.</p>
+
+<pre>% <b>cd ~/lab</b>
+% <b>git commit -am 'my solution to lab4'</b>
+
+Created commit ...
+% <b>git pull</b>
+remote: Generating pack...
+...
+% <b>git checkout -b lab5 origin/lab5</b>
+Branch lab5 set up to track remote branch refs/remotes/origin/lab5.
+Switched to a new branch "lab5"
+% <b>git merge lab4</b>
+</pre>
+
+<h3>Testing Performance</h3>
+
+<p>
+Our measure of performance is the number of <tt>put</tt>
+and <tt>get</tt> RPCs that your
+extent server receives. You can tell the extent server to print out a
+line every 25 RPCs telling you the current totals as you did for the
+lock server in Lab 4, by setting <tt>RPC_COUNT</tt> to 25.
+
+</p><p>Then you can start the servers, run the <tt>test-lab-3-c</tt>
+tester, and look in <tt>extent_server.log</tt> to see how many RPCs
+have been received.
+
+</p><pre>% <b>export RPC_COUNT=3D25</b>
+% <b>./start.sh</b>
+% <b>./test-lab-3-c ./yfs1 ./yfs2</b>
+Create/delete in separate directories: tests completed OK
+% <b>grep "RPC STATS" extent_server.log</b>
+...
+RPC STATS: 1:2 6001:804 6002:2218 6003:1878 6004:198
+% <b>./stop.sh</b>
+</pre>
+
+<p>
+The <tt>RPC STATS</tt> line indicates the number of <tt>bind</tt>,
+<tt>put</tt>,
+<tt>get</tt>, <tt>getattr</tt>, and <tt>remove</tt>
+RPCs received by the extent server.
+The above line is the output of our solution for Lab 4. Your goal is
+to reduce those numbers to about a dozen <tt>put</tt>s and at most a few
+hundred <tt>get</tt>s.
+
+
+</p><h3>Step One: Extent Cache</h3>
+
+In Step One you'll add caching to your extent client, without cache
+consistency. This cache will make your
+<tt>yfs_client</tt> fast but inconsistent.
+
+<p>Your new <tt>extent_client::get</tt>
+should check if the extent is cached, and if so
+return the cached copy. Otherwise <tt>get()</tt> should fetch the
+extent from the extent server, put it in the local cache, and then
+return it. <tt>put()</tt> should just replace the cached
+copy, and not send it to the extent server. You'll find it helpful for
+the next section if you keep track of which cached extents have been
+modified by <tt>put()</tt> (<i>i.e.,</i> are
+"dirty"). <tt>remove()</tt> should delete the extent from the local
+cache.
+<tt>extent_client</tt> should maintain cached attributes for each extent
+so that <tt>extent_client::getattr()</tt> returns reasonable values.
+
+</p><p>
+When you're done, set <tt>RPC_COUNT</tt> and run <tt>test-lab-3-c</tt>
+giving the same directory twice, and watch the RPC STATS printed by
+the extent server. You should see zero <tt>put</tt>s and somewhere between =
+zero
+and a few hundred <tt>get</tt>s (or perhaps no numbers at all, if the value=
+ of
+<tt>RPC_COUNT</tt> is more than the number of <tt>get</tt>s). Your server
+should pass <tt>test-lab-3-a.pl</tt> and <tt>test-lab-3-b</tt> if you
+give it the same directory twice, but it will probably fail
+<tt>test-lab-3-b</tt> with two different directories because it has no
+cache consistency.
+
+</p><p>
+You can modify <tt>extent_client.cc</tt>
+and <tt>extent_client.h</tt>, or if you'd like, you can add the code
+to a sub-class in a separate file. Remember to <tt>git add</tt> any
+new files you create.
+
+</p><h3>Step Two: Cache Consistency</h3>
+
+<p>
+In Step Two you'll ensure that each <tt>get()</tt> sees the latest
+<tt>put()</tt>, even when the <tt>get()</tt> and <tt>put()</tt> are
+from different YFS clients. The extent client and lock client will
+cooperate to do this, helped by the <tt>yfs_client</tt> using the same
+ID for a file/directory i-number, lock, and extent. When your lock
+client releases a lock back to the lock server, you should ensure that
+the extent client first flush the extent to the server, and then remove
+it from local cache. A flush requires putting the corresponding extent (if
+dirty) to the extent server, or removing the extent (if locally removed)
+from the extent server.
+
+</p><p>
+Suppose client A acquires the lock on an i-number, get()s the file's
+data from the extent server and modifies it in its extent client
+cache, and keeps the lock and extent cached. Client B then asks for
+the lock, so that the lock server sends client A a revoke message.
+Client A will send the dirty data back to the extent server before
+releasing the lock. Then B will acquire the lock and get() the
+i-number's extent. Since B cannot have the extent in its cache (if it
+ever cached it, it must have deleted it when it gave up the lock), and
+A wrote the modified extent to the extent server before releasing the
+lock, B will see A's modifications.
+
+</p><p>
+You will now be using locks for two different purposes: first, to
+ensure that each file system operation is atomic; second, to drive the
+extent cache consistency scheme. This may mean that you have to add
+acquires and releases to <tt>yfs_client</tt> that were not necessary
+to pass the tests for the previous labs. Ensure
+that <b>every</b> <tt>yfs_client</tt> call to get(eid), put(eid),
+getattr(eid), and remove(eid) is wrapped in acquire(eid)/release(eid).
+
+</p><p>Add a method to the extent client to eliminate
+an extent from the cache. This
+<tt>flush()</tt> method should first check whether the extent is dirty
+in the cache, in which case it should send it to the extent server.
+If the extent has been removed (with the extent client's
+<tt>remove()</tt> method), <tt>flush()</tt> should send a remove RPC
+to the server.
+<tt>extent_client</tt> should cache attributes fetched from the
+server, and invalidate the relevant attributes in <tt>flush()</tt>.
+You need not explicitly send dirty attributes to the extent server; instead=
+,
+it is enough to let the server update the attributes as a side-effect
+of <tt>flush()</tt> sending a put RPC for a dirty extent.
+
+</p><p>Your YFS server should call <tt>flush()</tt> just before
+releasing a lock back to the lock server. You could just add
+<tt>flush()</tt> calls to <tt>yfs_client.cc</tt> before each
+<tt>release()</tt>. However, now that your lock client handles the
+caching of locks, flushing an extent
+in <tt>lock_client::release()</tt> is overkill; you only have to flush
+an extent when the lock server revokes the corresponding lock.
+
+</p><p>
+We provide you with a bit of glue to connect the lock client to
+the extent client in the form of the
+<tt>lock_release_user</tt> class, defined in
+<tt>lock_client_cache.h</tt>.  This is a virtual class supporting only
+one method: <tt>dorelease(lock_protocol::lockid_t)</tt>.  Your job is to
+subclass <tt>lock_release_user</tt> and implement that subclass's
+<tt>dorelease</tt> method to call <tt>flush()</tt> on your extent
+client for whatever data is about to lose its lock.  Then, create an
+instance of this class and pass it into the <tt>lock_client_cache</tt>
+object constructed in <tt>yfs_client.cc</tt>.  Finally, your
+<tt>lock_client_cache</tt> must call the <tt>dorelease()</tt> method of
+its <tt>lu</tt> object before it releases a lock back to the lock
+server.  (Note that <tt>lu</tt> was defined and initialized in the
+code we provided you for Lab 4.)
+This will ensure that <tt>lock_client::flush()</tt>
+is called before the lock is released.
+
+</p><p>When you're done with Step Two your server should pass all the
+correctness tests (<tt>test-lab-3-a.pl</tt>, <tt>test-lab-3-b</tt>,
+and <tt>test-lab-3-c</tt> should execute correctly with two separate
+YFS directories), and you should see a dramatic drop in the number of
+<tt>put</tt>s and <tt>get</tt>s received by the extent server.
+
+</p><h3>Hints</h3>
+
+<ul>
+
+<li>Make sure you use a pthreads mutex to protect the extent cache, in
+case multiple threads access it at once.
+
+</li><li>Make sure that, if you only read an extent (or its attributes),
+you don't flush it back on a release.  You should keep a
+flag in your cache that records if an extent (or its attributes) have
+been modified.
+
+</li><li>You may be able to implement the caching in the extent client
+without modifying yfs_client.cc, except for instantiating (if you implement=
+ed
+your caching extent client as a separate class) and passing=20
+the object that implements the <tt>lock_release_user</tt> interface in
+<tt>yfs_client::yfs_client</tt>. However, as noted above, you
+may have to add acquire and release calls to <tt>yfs_client</tt>.
+
+</li></ul>
+
+<h3>Collaboration policy</h3>You must write all the code you hand in
+for the programming assignments, except for code that we give you as
+part of the assignment. You are not allowed to look at anyone else's
+solution (and you're not allowed to look at solutions from previous
+years). You may discuss the assignments with other students, but you
+may not look at or copy each others' code.
+
+<h3>Handin procedure</h3>
+
+E-mail your code as a gzipped tar file to <a href=3D"mailto:6.824-submit@pd=
+os.csail.mit.edu">6.824-submit@pdos.csail.mit.edu</a>
+by the deadline at the top of the page.  To do this, execute these
+commands:
+
+<pre>% <b>cd ~/lab</b>
+% <b>./stop.sh</b>
+% <b>make clean</b>
+% <b>rm core*</b>
+% <b>rm *log</b>
+% <b>cd ..</b>
+% <b>tar czvf `whoami`-lab5.tgz lab/</b>
+</pre>
+
+or
+
+<pre>% <b>cd ~/6.824/lab</b>
+% <b>make handin</b>
+</pre>
+
+That should produce a file called <tt>[your_user_name]-lab5.tgz</tt> in you=
+r
+<tt>lab/</tt> directory.  Attach that file to an email and send it to the 6=
+.824
+submit address.
+
+<hr>
+
+<address>
+Please post questions or comments on <a href=3D"http://piazza.com/">Piazza<=
+/a>.<br>
+
+Back to <a href=3D"http://pdos.csail.mit.edu/6.824/">6.824 home</a>.
+</address>
+
+
+
+</body><eusoft-chrome-extension-root-en id=3D"eusoft-chrome-extension-id-en=
+" _nghost-ng-c2546567076=3D"" ng-version=3D"18.2.13"><template _ngcontent-n=
+g-c2546567076=3D""></template><!----><!----><!----><app-word-hint-render _n=
+gcontent-ng-c2546567076=3D"" _nghost-ng-c3319869249=3D""><template _ngconte=
+nt-ng-c3319869249=3D""></template><!----><!----></app-word-hint-render><app=
+-translate-render _ngcontent-ng-c2546567076=3D"" _nghost-ng-c2607817495=3D"=
+"><template _ngcontent-ng-c2607817495=3D""></template><!----><translate-ana=
+lyzer _ngcontent-ng-c2607817495=3D""><template></template></translate-analy=
+zer></app-translate-render><app-capture-word _ngcontent-ng-c2546567076=3D""=
+ class=3D"eusoft-chrome-extension-capture-word-container ng-tns-c2615027859=
+-0 ng-star-inserted"><template shadowmode=3D"open"><!----><!----><div class=
+=3D"eusoft-eudic-chrome-extension-explain-popover-container-class ng-tns-c2=
+615027859-0" data-content-script-theme=3D"light"><!----></div></template></=
+app-capture-word><app-translate-failed-retry _ngcontent-ng-c2546567076=3D""=
+ _nghost-ng-c3081775404=3D""><!----></app-translate-failed-retry><!----><!-=
+---></eusoft-chrome-extension-root-en></html>
+------MultipartBoundary--9pHIHkHfgY8343jhYf2Lq9wlTdSonxaclb7Tn1MxrS----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: https://pdos.csail.mit.edu/archive/6.824-2012/labs/style.css
+
+@charset "utf-8";
+
+body { color: black; background-color: white; font-family: sans-serif; }
+
+.title { text-align: center; }
+
+.subtitle { text-align: center; font-style: italic; }
+
+.author { text-align: center; }
+
+code { font-size: 120%; color: green; }
+
+tt { font-size: 120%; }
+
+pre { font-size: 100%; color: green; margin: 1em; border: 1px dashed; paddi=
+ng: 1em; }
+
+.classic { color: black; }
+------MultipartBoundary--9pHIHkHfgY8343jhYf2Lq9wlTdSonxaclb7Tn1MxrS----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-8c726608-99d0-424f-8a94-461dd94a5abe@mhtml.blink
+
+@charset "utf-8";
+
+.eusoft-eudic-translate-failed-container[_ngcontent-ng-c3081775404] { posit=
+ion: fixed !important; bottom: 50px !important; right: 50px !important; bor=
+der-radius: 5px !important; box-shadow: rgba(0, 0, 0, 0.08) 0px 6px 24px !i=
+mportant; z-index: 2147483647 !important; }
+
+.eusoft-eudic-translate-failed-content-script[_ngcontent-ng-c3081775404] { =
+border: 1px solid rgb(232, 232, 232) !important; background-color: rgb(248,=
+ 250, 254) !important; }
+
+html.light-en [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.light-fr [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.light-de [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.light-es [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.dark-en [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-contai=
+ner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(89, 89, 89) !importa=
+nt; background-color: rgb(33, 33, 37) !important; }
+
+html.dark-fr [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-contai=
+ner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(89, 89, 89) !importa=
+nt; background-color: rgb(33, 33, 37) !important; }
+
+html.dark-de [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-contai=
+ner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(89, 89, 89) !importa=
+nt; background-color: rgb(33, 33, 37) !important; }
+
+html.dark-es [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-contai=
+ner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(89, 89, 89) !importa=
+nt; background-color: rgb(33, 33, 37) !important; }
+
+html.sepia-en [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.sepia-fr [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.sepia-de [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.sepia-es [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.green-en [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.green-fr [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.green-de [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.green-es [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+------MultipartBoundary--9pHIHkHfgY8343jhYf2Lq9wlTdSonxaclb7Tn1MxrS----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-c470d2e9-2342-4ba1-a4e4-c62505ecaa13@mhtml.blink
+
+@charset "utf-8";
+
+.eudic-tippy-content-container[_ngcontent-ng-c2546567076] { max-width: 250p=
+x !important; }
+
+.eusoft-chrome-extension-popup-menu[_ngcontent-ng-c2546567076] { position: =
+fixed; z-index: 2147483647; top: 50%; }
+
+.eusoft-chrome-extension-popup-menu.eusoft-chrome-extension-popup-menu-left=
+[_ngcontent-ng-c2546567076] { left: 4px; }
+
+.eusoft-chrome-extension-popup-menu.eusoft-chrome-extension-popup-menu-righ=
+t[_ngcontent-ng-c2546567076] { right: 4px; }
+
+.eusoft-chrome-extension-mask-container[_ngcontent-ng-c2546567076] { backgr=
+ound-color: transparent; position: fixed; inset: 0px; z-index: 2147483646; }
+------MultipartBoundary--9pHIHkHfgY8343jhYf2Lq9wlTdSonxaclb7Tn1MxrS------
