@@ -8,6 +8,6 @@ project(BusTub
 )
 
 add_subdirectory(src/kvRaft)
-#add_subdirectory(src/MapReduce)
-#add_subdirectory(src/Raft)
-#add_subdirectory(src/shardKv)
+add_subdirectory(src/MapReduce)
+add_subdirectory(src/Raft)
+add_subdirectory(src/shardKv)
