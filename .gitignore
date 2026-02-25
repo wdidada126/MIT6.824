@@ -1,0 +1,16 @@
+.idea/
+cmake-build*/
+CMakeUserPresets.json
+build/
+temp/
+.vs/
+
+.xmake/
+
+bazel-testlogs
+bazel-testdrogon
+bazel-out
+bazel-bin\
+MODULE.bazel.lock
+
+zab_simulation/build
