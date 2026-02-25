@@ -1,0 +1,732 @@
+From: <Saved by Blink>
+Snapshot-Content-Location: https://pdos.csail.mit.edu/archive/6.824-2012/labs/lab-6.html
+Subject: 6.824 Lab 6: Paxos
+Date: Wed, 25 Feb 2026 18:00:30 +0800
+MIME-Version: 1.0
+Content-Type: multipart/related;
+	type="text/html";
+	boundary="----MultipartBoundary--AD6MKN3Ymia4Ip1vfCvaFL6XIihBybGSUUk9Nyg0Rh----"
+
+
+------MultipartBoundary--AD6MKN3Ymia4Ip1vfCvaFL6XIihBybGSUUk9Nyg0Rh----
+Content-Type: text/html
+Content-ID: <frame-9A9D98D0A5E4C99E072042C5A7F7F044@mhtml.blink>
+Content-Transfer-Encoding: quoted-printable
+Content-Location: https://pdos.csail.mit.edu/archive/6.824-2012/labs/lab-6.html
+
+<!--?xml version=3D"1.0" encoding=3D"utf-8"?--><!DOCTYPE html PUBLIC "-//W3=
+C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-=
+transitional.dtd"><html xmlns=3D"http://www.w3.org/1999/xhtml" data-eusoft-=
+scrollable-element=3D"1"><head><meta http-equiv=3D"Content-Type" content=3D=
+"text/html; charset=3DUTF-8"><link rel=3D"stylesheet" type=3D"text/css" hre=
+f=3D"cid:css-24151d19-43a8-4b82-975e-3a55108fd6c8@mhtml.blink" /><link rel=
+=3D"stylesheet" type=3D"text/css" href=3D"cid:css-f9585264-52fd-4ea2-8622-d=
+0ae0774ba45@mhtml.blink" />
+  <meta name=3D"generator" content=3D"HTML Tidy for Linux/x86 (vers 12 Apri=
+l 2005), see www.w3.org">
+  <link rel=3D"StyleSheet" href=3D"https://pdos.csail.mit.edu/archive/6.824=
+-2012/labs/style.css" type=3D"text/css">
+
+  <title>6.824 Lab 6: Paxos </title>
+</head>
+
+<body>
+  <div align=3D"center">
+    <h2><a href=3D"https://pdos.csail.mit.edu/archive/6.824-2012/index.html=
+">6.824</a> - Spring 2012</h2>
+  </div>
+
+  <div align=3D"center">
+      <h1>6.824 Lab 6: Paxos </h1>
+  </div>
+
+  <div align=3D"center">
+    <h3>Due: Friday, April 13th, 5:00pm.</h3>
+  </div>
+  <hr>
+
+
+<h3>Introduction</h3>
+
+<p>In labs 6 and 7, you will replicate the lock service using the
+  replicated state machine
+  approach. See <a href=3D"https://pdos.csail.mit.edu/archive/6.824-2012/pa=
+pers/schneider-rsm.pdf">Schneider's
+  RSM paper</a> for a good, but non-required, reference.
+  In the replicated state machine approach, one machine is the master;
+  the master receives requests from clients and executes them on all
+  replicas in the same order.
+
+</p><p>When the master fails, any of the replicas can take over its job,
+  because they all should have the same state as the failed
+  master. One of the key challenges is ensuring that everyone agrees
+  on which replica is the master and which of the slaves are alive,
+  despite arbitrary sequences of crashes or network partitions.  We
+  use <a href=3D"https://pdos.csail.mit.edu/archive/6.824-2012/papers/paxos=
+-simple.pdf">Paxos</a> to reach such an
+  agreement.
+
+</p><p>In this lab, you will implement Paxos and use it to agree to a
+  sequence of membership changes (<i>i.e.</i>, view changes). We will
+  implement the replicated lock server in Lab 7. We have modified
+  <tt>lock_smain.cc</tt> in this lab to start the
+  RSM <i>instead of</i> the lock server; however, we will not actually
+  replicate locks until Lab 7. <font color=3D"red">As a result, in this lab=
+,=20
+  the <tt>lock_server</tt> processes are actually serving as the <tt>config=
+uration=20
+  server</tt>s. We will use the term <tt>configuration server</tt> and=20
+  <tt>lock_server</tt> interchangably in the following text.</font>
+
+</p><p>When you complete this lab and the next you will have a
+  replicated state machine that manages a group of lock servers.
+  You should be able to start new lock servers, which will contact the
+  master and ask to join the replica group. Nodes can also be removed
+  from the replica group when they fail. The set of nodes in the group
+  at a particular time is a <i>view</i>, and each time the view
+  changes, you will run Paxos to agree on the new view.
+
+</p><p>The design we have given you consists of three layered modules. The
+  RSM and config layers make downcalls to tell the layers below them
+  what to do. The config and Paxos modules also make upcalls to the
+  layers above them to inform them of significant events (<i>e.g.</i>,
+  Paxos agreed to a value, or a node became unreachable).
+</p><dl>
+<dt><strong>RSM module</strong></dt>
+<dd>
+The RSM module is in charge of replication. When a node joins, the RSM
+module directs the config module to add the node. The RSM module also
+runs a <i>recovery</i> thread on every node to ensure that nodes in the
+same view have consistent states. In this lab, the only state to
+recover is the sequence of Paxos operations that have been
+executed. In Lab 7, you will extend the RSM module to replicate
+the lock service.
+</dd>
+
+<dt><strong>config module</strong></dt>
+<dd>The config module is in charge of view management. When the RSM
+  module asks it to add a node to the current view, the config module
+  invokes Paxos to agree on a new view. The config module also sends
+  periodic heartbeats to check if other nodes are alive, and removes a
+  node from the current view if it can't contact some of the members
+  of the current view.  It removes a node by invoking Paxos to agree
+  on a new view without the node.</dd>
+
+<dt><strong>Paxos module</strong></dt>
+<dd>The Paxos module is in charge of running Paxos to agree on a
+  value. In principle the value could be anything. In
+  our system, the value is the list of nodes constituting the next view.
+</dd>
+</dl>
+The focus of this lab is on the Paxos module.
+You'll replicate the lock server in the next lab.
+<p>
+
+</p><p>Each module has threads and internal mutexes. As described above, a
+thread may call down through the layers. For instance, the RSM could
+tell the config module to add a node, and the config module tells
+Paxos to agree to a new view. When Paxos finishes, a thread will
+invoke an upcall to inform higher layers of the completion. To avoid
+deadlock, we suggest that you use the rule that a module releases its
+internal mutexes before it upcalls, but can keep its mutexes when calling
+down.
+
+</p><h3>Getting Started</h3>
+
+<p>Begin by initializing your Lab 6 branch with your implementation
+from <a href=3D"https://pdos.csail.mit.edu/archive/6.824-2012/labs/lab-5.ht=
+ml">Lab 5</a>.
+
+</p><pre>% <b>cd ~/lab</b>
+% <b>git commit -am 'my solution to lab5'</b>
+
+Created commit ...
+% <b>git pull</b>
+remote: Generating pack...
+...
+% <b>git checkout -b lab6 origin/lab6</b>
+Branch lab6 set up to track remote branch refs/remotes/origin/lab6.
+Switched to a new branch "lab6"
+% <b>git merge lab5</b>
+</pre>
+
+<p>This will add new files, <tt>paxos_protocol.h</tt>, <tt>paxos.{cc,h}</tt=
+>,
+<tt>log.{cc,h}</tt>, <tt>rsm_tester.pl</tt>, <tt>config.{cc,h}</tt>, <tt>rs=
+m.{cc,h}</tt>,
+and <tt>rsm_protocol.h</tt> to your <tt>lab/</tt> directory and update
+the GNUmakefile from your previous lab.  It will also incorporate minor
+changes into your <tt>lock_smain.cc</tt> to initialize the RSM module
+when the lock server starts. <font color=3D"red">Note that since the RSM
+and the lock server both bind on the same port, this will
+actually disable your lock server until Lab 7, unless you change the
+relevant line in <tt>lock_smain.cc</tt> back.</font>
+The lock server will now take two
+command-line arguments: the port that the master and the port that
+the lock server you are starting should bind to.
+
+</p><p>
+In <tt>rsm.{cc,h}</tt>, we have provided you with code to set up the
+appropriate RPC handlers and manage recovery in this lab.=20
+
+</p><p>
+In files <tt>paxos.{cc,h}</tt>, you will find a sketch implementation of
+the <tt>acceptor</tt> and <tt>proposer</tt> classes that will use the Paxos
+protocol to agree on view changes.
+The file <tt>paxos_protocol.h</tt> defines the suggested RPC
+protocol between instances of Paxos running on different replicas,
+including structures for arguments and return types, and marshall code
+for those structures. You'll be finishing this Paxos code in this lab.
+
+</p><p>The files <tt>log.{cc,h}</tt> provide a <i>full</i> implementation
+of a <tt>log</tt> class, which should be used by your
+<tt>acceptor</tt> and <tt>proposer</tt> classes
+to log important Paxos events to disk.  Then, if the node fails and
+later re-joins, it has some memory about past views of the system.
+<font color=3D"red">Do not make any changes to this class, as we will use
+our own original versions of these files during testing.</font>
+
+</p><p><tt>config.cc</tt> maintains views using Paxos. You will need to
+  understand how it interacts with the Paxos and RSM layers, but you
+  should not need to make any changes to it for this lab.
+
+</p><p>
+In the next lab we
+will test if the replicated lock service maintains the state of
+replicated locks correctly, but in this lab we will just test if view
+changes happen correctly.
+The lab
+tester <tt>rsm_tester.pl</tt> will automatically start several lock
+servers, kill and restart some of them, and check that you have
+implemented the Paxos protocol and used it correctly.
+
+
+</p><h4>Understanding how Paxos is used for view changes</h4>
+
+<p>There are two classes that together implement the Paxos protocol:
+  <tt>acceptor</tt> and <tt>proposer</tt>.  Each replica runs both
+  classes.  The <tt>proposer</tt> class leads the Paxos protocol by
+  proposing new values and sending requests to all replicas.
+  The <tt>acceptor</tt> class processes the requests from the
+  <tt>proposer</tt> and sends responses back.  The method
+  <tt><nobr>proposer::run(nodes, v)</nobr></tt> is used to get the
+  members of the current view (<tt>nodes</tt>) to agree to a value
+  <tt>v</tt>. When an agreement instance completes, <tt>acceptor</tt>
+  will call <tt>config</tt>'s <tt>paxos_commit(instance, v)</tt>
+  method with the value that was chosen. As explained below, other
+  nodes may also attempt to start Paxos and propose a value, so there
+  is no guarantee that the value that a server proposed is the
+  same as the one that is actually chosen. (In fact, Paxos might abort
+  if it can't get a majority to accept its <tt> prepare </tt> or=20
+<tt>accept</tt> messages!)
+
+</p><p>The <tt>config</tt> module performs view changes among the set of
+participating nodes.  The first view of the system is specified
+manually.  Subsequent view changes rely on Paxos to agree on a unique
+next view to displace the current view.
+
+</p><p>When the system starts from scratch, the first node creates view 1
+containing itself only, i.e. view_1=3D{1}.  When node 2 joins after the
+first node, node two's RSM module joins node 1 and transfers view 1 from th=
+e
+node one. Then, node 2 asks its <tt>config</tt> module to add
+itself to view 1. The config module will use Paxos to propose to
+nodes in view_1=3D{1} a new view_2 containing node 1 and 2.  When Paxos
+succeeds, view_2 is formed, <i>i.e.</i>, view_2=3D{1,2}.  When node 3
+joins, its
+RSM module will download the last view from the first node (view 2)
+and it will then attempt to propose to nodes in view 2 a new
+view_3=3D{1,2,3}. And so on.
+
+</p><p>The config module will also initiate view changes when it
+discovers that some nodes in the current view are not
+responding.  In particular, the node with the smallest id periodically
+sends heartbeat RPCs to all others (and all other servers periodically
+send heartbeats to the node with the smallest id).  If a heartbeat RPC
+times out, the config module calls the <tt>proposer</tt>'s
+<tt><nobr>run(nodes, v)</nobr></tt> method to start a new round of the Paxo=
+s
+protocol.  Because each node
+independently decides if it should run Paxos, there may be several
+instances of Paxos running simultaneously; Paxos sorts that out
+correctly.
+
+</p><p>The <tt>proposer</tt> keeps track of whether the current view is
+stable or not (using the <tt>proposer::stable</tt> variable).  If the
+current view is stable, there are no on-going Paxos view change
+attempts by this node.  When the current view is not stable,
+the node is initiating the Paxos protocol.
+
+</p><p>The <tt>acceptor</tt> logs important Paxos events as well as a compl=
+ete
+history of all values agreed to on disk. At any time a node can reboot
+and when it re-joins, it may be many views behind. Unless the node
+brings itself up-to-date on the current view, it won't be able to
+participate in Paxos.  By remembering all views, the other nodes can
+bring this re-joined node up to date.
+
+</p><h4>The Paxos Protocol</h4>
+
+<p>The <a href=3D"https://pdos.csail.mit.edu/archive/6.824-2012/papers/paxo=
+s-simple.pdf">Paxos Made Simple
+  paper</a> describes a protocol that agrees on a value and then
+  terminates. Since we want to run another instance of Paxos every
+  time there is a view change, we need to ensure that messages from
+  different instances are not confused. We do this by adding instance
+  numbers (which are not the same as proposal numbers) to all messages.
+  Since we are using Paxos to agree on view changes, the instance
+  numbers in our use of Paxos are the same as the view numbers in the
+  config module.
+
+</p><p>Paxos can't guarantee that every node learns the chosen value right
+  away; some of them may be partitioned or crashed. Therefore, some
+  nodes may be behind, stuck in an old instance of Paxos while the
+  rest of the system has moved on to a new instance. If a node's
+  <tt>acceptor</tt> gets an RPC request for an old instance, it should
+  reply to the <tt>proposer</tt> with a
+  special RPC response (set <tt>oldinstance</tt> to true). This response
+  informs the calling <tt>proposer</tt> that it is
+  behind and tells it what value was chosen for that instance.
+
+</p><p>Below is the pseudocode for Paxos. The <tt>acceptor</tt> and <tt>pro=
+poser</tt> skeleton
+classes contain member variables, RPCs, and RPC handlers
+corresponding to this code. Except for the additions to handle
+instances as described above, it mirrors the protocol described in the pape=
+r.
+
+</p><pre>proposer run(instance, v):
+ choose n, unique and higher than any n seen so far
+ send prepare(instance, n) to all servers including self
+ if oldinstance(instance, instance_value) from any node:
+   commit to the instance_value locally
+ else if prepare_ok(n_a, v_a) from majority:
+   v' =3D v_a with highest n_a; choose own v otherwise
+   send accept(instance, n, v') to all
+   if accept_ok(n) from majority:
+     send decided(instance, v') to all
+
+acceptor state:
+ must persist across reboots
+ n_h (highest prepare seen)
+ instance_h, (highest instance accepted)
+ n_a, v_a (highest accept seen)
+
+acceptor prepare(instance, n) handler:
+ if instance &lt;=3D instance_h
+   reply oldinstance(instance, instance_value)
+ else if n &gt; n_h
+   n_h =3D n
+   reply prepare_ok(n_a, v_a)
+ else
+   reply prepare_reject
+
+acceptor accept(instance, n, v) handler:
+ if n &gt;=3D n_h
+   n_a =3D n
+   v_a =3D v
+   reply accept_ok(n)
+ else
+   reply accept_reject
+
+acceptor decide(instance, v) handler:
+ paxos_commit(instance, v)
+</pre>
+
+<p>
+For a given instance of Paxos, potentially many
+nodes can make proposals, and each of
+these proposals has a unique proposal number.  When comparing
+different proposals, the highest proposal number wins.  To ensure that
+each proposal number is unique, each proposal consists of a number and
+the node's identifier.  We provide you with a struct <tt>prop_t</tt>
+in <tt>paxos_protocol.h</tt> that you should use for proposal numbers;
+we also provide the <tt>&gt;</tt> and <tt>&gt;=3D</tt> operators for the
+class.
+
+</p><p>Each replica must log certain change to its Paxos state (in particul=
+ar
+the <tt>n_a</tt>, <tt>v_a</tt>, and <tt>n_h</tt> fields), as well as
+log every agreed value.  The provided <tt>log</tt> class does this for
+you; please use it without modification, as the test program depends
+on its output being in a particular format.
+
+</p><p>
+Add the extra
+parameter <tt>rpcc::to(1000)</tt> to your RPC calls to prevent the
+RPC library from spending a long time attempting to contact crashed nodes.
+
+
+</p><h3>Your Job</h3>=20
+The measure of success for this lab is to pass tests <b>0-7</b> of
+<tt>rsm_tester.pl</tt>. (The remaining tests are reserved for the next lab.=
+)
+The tester starts 3 or 4 configuration servers, kills and
+restarts some of them, and checks that all servers indeed go through a
+unique sequence of view changes by examining their on-disk logs.
+
+<pre>% ./rsm_tester.pl 0 1 2 3 4 5 6 7=20
+test0...
+...
+test1...
+...
+test2...
+...
+test3...
+...
+test4...
+...
+test5...
+...
+test6...
+...
+test7...
+...
+tests done OK
+</pre>
+
+<p><b>Important</b>: If rsm_tester.pl fails during the middle of a test, <b=
+>the remaining <tt>lock_server</tt> processes=20
+are not killed</b> and the log files are not cleaned up (so you can=20
+debug the causes.). Make sure you do 'killall lock_server; rm -f *.log'=20
+to clean up the lingering processes before running rsm_tester.pl again.
+
+
+</p><h3>Detailed Guidance</h3>
+
+<p>We guide you through a series of steps to get this lab working increment=
+ally.
+
+</p><h4>Step One: Implement Paxos</h4>
+
+<p> Fill in the Paxos implementation in <tt>paxos.cc</tt>,
+following the pseudo-code above. Do not worry about failures yet.
+
+</p><p>
+Use the RPC protocol we provide in
+<tt>paxos_protocol.h</tt>.  <font color=3D"red">In order to pass the tests,=
+ when the=20
+<tt>proposer</tt> sends a RPC, you should set an RPC timeout of
+1000 milliseconds.</font>
+Note that though the pseudocode shows different
+types of responses to each kind of RPC, our protocol combines these respons=
+es
+into one type of return structure.  For example, the <tt>prepareres</tt> st=
+ruct
+can act as a <tt>prepare_ok</tt>, an <tt>oldinstance</tt>, or a <tt>reject<=
+/tt>
+message, depending on the situation.
+
+</p><p>
+You may find it helpful for debugging to look in the
+<tt>paxos-[port].log</tt> files, which are written
+to by <tt>log.cc</tt>.
+<tt>rsm_tester.pl</tt>
+does not remove these logs when a test fails so that you can
+use the logs for debugging.
+<tt>rsm_tester.pl</tt> also re-directs the stdout and stderr of=20
+your <tt>configuration server</tt> to <tt>lock_server-[arg1]-[arg2].log</tt=
+>.
+
+</p><p>Upon completing this step, you should be able to pass '<tt>rsm_teste=
+r.pl
+0</tt>'. This test starts three <tt>configuration server</tt>s
+one after another and checks that all servers go through the same three
+views.
+
+
+</p><h4>Step Two: Simple failures</h4>
+
+<p>
+Test whether your Paxos handles simple failures by
+running '<tt>rsm_tester.pl 0 1 2</tt>'.=20
+You will not have to write any new code for this step if your code is alrea=
+dy
+correct.
+
+</p><h4>Step Three: Logging Paxos state</h4>
+
+<p>Modify your Paxos implementation to use the <tt>log</tt> class to
+log changes to <tt>n_h</tt>, and
+<tt>n_a</tt> and <tt>v_a</tt> when they are updated.  Convince yourself why=
+ these=20
+three values must be logged to disk if we want to re-start a previously cra=
+shed
+node correctly. We have provided the code to write and read logs in
+<tt>log.cc</tt> (see <tt>log::logprop()</tt>, and <tt>log::logaccept()</tt>=
+), so
+you just have to make sure to call the appropriate methods at the right tim=
+es.
+
+</p><p>Now you can run tests that involve restarting a node after it
+  fails.  In particular, you should be able to pass '<tt>rsm_tester.pl 3 4 =
+</tt>'.
+In test 4, rsm_tester.pl starts three servers, kills the third server (the =
+remaining=20
+two nodes should be able to agree on a new view), kills the second server
+(the remaining one node tries to run Paxos, but cannot succeed since=20
+no majority of nodes are present in the current view), restarts the=20
+third server (it will not help with the agreement since the third server is=
+ not=20
+in the current view), kills the third server, restarts second server (now=
+=20
+agreement can be reached), and finally restarts third server.
+
+</p><h4>Step Four: Complicated failures</h4>
+
+<p>Finally, you need to verify that your code handles some of the
+tricky corner cases that Paxos is supposed to deal with.  Our test
+scripts do not test all possible corner cases, so you could still have
+a buggy Paxos implementation after this step, but you will have a good
+feel for the protocol.
+
+</p><p>In <tt>paxos.cc</tt>, we use two methods:
+<tt>breakpoint1()</tt> and <tt>breakpoint2()</tt> to induce complex failure=
+s.
+The <tt>proposer::run</tt> function
+calls <tt>breakpoint1()</tt> just after completing Phase 1, but
+before starting Phase 2.  Similarly it calls <tt>breakpoint2()</tt> in betw=
+een
+Phases 2 and 3.  The RSM layer runs a small RPC server that accepts the
+<tt>rsm_test_protocol</tt> RPCs defined in <tt>rsm_protocol.h</tt>.  The te=
+ster
+uses <tt>rsm_tester</tt> to sends RPCs to cause the server to exit at=20
+the respective breakpoint.
+
+</p><ul>
+
+
+<li><p><b>Test 5</b>: This test starts three nodes and kills the third
+  node.  The first node will become the leader to initiate Paxos, but
+  the test will cause it to crash at breakpoint 1 (at the end of Phase 1).
+  Then the test will restart the killed third node, which together with the
+  remaining node should be able to finish Paxos (ignoring the failed
+  first node) and complete the view change successfully.  The script will
+  verify that the Paxos logs show the correct view changes.
+
+</p></li><li><p><b>Test 6</b>: This test starts four nodes one by one and
+  kills the fourth node. =20
+	The first node initiates Paxos as a leader, but the test
+  causes it to fail at breakpoint 2 (after phase 2.)
+	When the fourth node re-joins the system, the rest of the nodes=20
+  should finish agreeing on the view originally
+  proposed by the first node, before making a new view of their own. =20
+
+</p></li><li><p><b>Test 7</b>: This test is identical to test 6, except tha=
+t it
+  kills <i>all</i> the remaining nodes after the first node exits.  Then
+  it restarts all slaves and checks that they first agree on the
+  first node's proposed view before making a new view of their own. =20
+</p></li></ul>
+
+<p>By now, your code should now reliably pass all required tests, i.e.
+'<tt>rsm_tester.pl 0 1 2 3 4 5 6 7</tt>'.
+
+</p><h3>Debugging Hints</h3>
+
+<ul>
+<li>Make sure you remove all the log files and then kill any remaining
+  lock servers (<tt>killall lock_server; rm -f *.log</tt>) before you
+  start a new test run.
+</li><li>If a test fails, first check the Paxos logs (<tt>paxos-*.log</tt>)
+  and make sure the sequence of proposals and views make sense. Do all
+  the nodes (that didn't crash) go through the same sequence of views?
+  Does the sequence of views make sense given what the test does?
+</li><li>If a server gets stuck, check whether one of the
+  lock servers (particularly the leader) deadlocked or crashed when it
+  shouldn't have. You can
+  get a list of the process ids of running lock servers with
+  `<tt><nobr>pgrep -s0 lock_server</nobr></tt>'. You can debug a
+  running lock server with `<tt><nobr>gdb -p<i>pid</i></nobr></tt>'.
+</li><li>Use <tt>printf</tt>s and check the relevant <tt>lock_server-*.log<=
+/tt>
+  files to see what is going on. Some particularly important events
+  are view changes, RSM requesting to add a node, and heartbeat events to
+  remove nodes.
+  In Paxos, print out important state variables
+  (e.g., <tt>my_n</tt>, <tt>n_h</tt>, <tt>n_a</tt>, <tt>instance_h</tt>)
+  and verify that they make sense.
+</li></ul>
+
+<h3>Handin procedure</h3>
+
+E-mail your code as a gzipped tar file to <a href=3D"mailto:6.824-submit@pd=
+os.csail.mit.edu">6.824-submit@pdos.csail.mit.edu</a>
+by the deadline at the top of the page.  To do this, execute these
+commands:
+
+<pre>% <b>cd ~/lab</b>
+% <b>./stop.sh</b>
+% <b>make clean</b>
+% <b>rm core.*</b>
+% <b>rm *.log</b>
+% <b>cd ..</b>
+% <b>tar czvf `whoami`-lab6.tgz lab/</b>
+</pre>
+
+or
+
+<pre>% <b>cd ~/6.824/lab</b>
+% <b>make handin</b>
+</pre>
+
+That should produce a file called <tt>[your_user_name]-lab6.tgz</tt> in you=
+r
+<tt>lab</tt> directory.  Attach that file to an email and send it to the 6.=
+824
+submit address.
+<hr>
+
+<address>
+Please post questions or comments on <a href=3D"http://piazza.com/">Piazza<=
+/a>.<br>
+
+Back to <a href=3D"http://pdos.csail.mit.edu/6.824/">6.824 home</a>.
+</address>
+  <!--  LocalWords:  ccfs filehandle RPCs cd mkdir cp wget nc cc blockdbd D=
+BG dir
+ -->
+  <!--  LocalWords:  localhost blockdbc blockdb ihash fs callback
+ -->
+
+
+</body><eusoft-chrome-extension-root-en id=3D"eusoft-chrome-extension-id-en=
+" _nghost-ng-c2546567076=3D"" ng-version=3D"18.2.13"><template _ngcontent-n=
+g-c2546567076=3D""></template><!----><!----><!----><app-word-hint-render _n=
+gcontent-ng-c2546567076=3D"" _nghost-ng-c3319869249=3D""><template _ngconte=
+nt-ng-c3319869249=3D""></template><!----><!----></app-word-hint-render><app=
+-translate-render _ngcontent-ng-c2546567076=3D"" _nghost-ng-c2607817495=3D"=
+"><template _ngcontent-ng-c2607817495=3D""></template><!----><translate-ana=
+lyzer _ngcontent-ng-c2607817495=3D""><template></template></translate-analy=
+zer></app-translate-render><app-capture-word _ngcontent-ng-c2546567076=3D""=
+ class=3D"eusoft-chrome-extension-capture-word-container ng-tns-c2615027859=
+-0 ng-star-inserted"><template shadowmode=3D"open"><!----><!----><div class=
+=3D"eusoft-eudic-chrome-extension-explain-popover-container-class ng-tns-c2=
+615027859-0" data-content-script-theme=3D"light"><!----></div></template></=
+app-capture-word><app-translate-failed-retry _ngcontent-ng-c2546567076=3D""=
+ _nghost-ng-c3081775404=3D""><!----></app-translate-failed-retry><!----><!-=
+---></eusoft-chrome-extension-root-en></html>
+------MultipartBoundary--AD6MKN3Ymia4Ip1vfCvaFL6XIihBybGSUUk9Nyg0Rh----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: https://pdos.csail.mit.edu/archive/6.824-2012/labs/style.css
+
+@charset "utf-8";
+
+body { color: black; background-color: white; font-family: sans-serif; }
+
+.title { text-align: center; }
+
+.subtitle { text-align: center; font-style: italic; }
+
+.author { text-align: center; }
+
+code { font-size: 120%; color: green; }
+
+tt { font-size: 120%; }
+
+pre { font-size: 100%; color: green; margin: 1em; border: 1px dashed; paddi=
+ng: 1em; }
+
+.classic { color: black; }
+------MultipartBoundary--AD6MKN3Ymia4Ip1vfCvaFL6XIihBybGSUUk9Nyg0Rh----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-f9585264-52fd-4ea2-8622-d0ae0774ba45@mhtml.blink
+
+@charset "utf-8";
+
+.eusoft-eudic-translate-failed-container[_ngcontent-ng-c3081775404] { posit=
+ion: fixed !important; bottom: 50px !important; right: 50px !important; bor=
+der-radius: 5px !important; box-shadow: rgba(0, 0, 0, 0.08) 0px 6px 24px !i=
+mportant; z-index: 2147483647 !important; }
+
+.eusoft-eudic-translate-failed-content-script[_ngcontent-ng-c3081775404] { =
+border: 1px solid rgb(232, 232, 232) !important; background-color: rgb(248,=
+ 250, 254) !important; }
+
+html.light-en [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.light-fr [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.light-de [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.light-es [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.dark-en [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-contai=
+ner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(89, 89, 89) !importa=
+nt; background-color: rgb(33, 33, 37) !important; }
+
+html.dark-fr [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-contai=
+ner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(89, 89, 89) !importa=
+nt; background-color: rgb(33, 33, 37) !important; }
+
+html.dark-de [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-contai=
+ner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(89, 89, 89) !importa=
+nt; background-color: rgb(33, 33, 37) !important; }
+
+html.dark-es [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-contai=
+ner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(89, 89, 89) !importa=
+nt; background-color: rgb(33, 33, 37) !important; }
+
+html.sepia-en [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.sepia-fr [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.sepia-de [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.sepia-es [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.green-en [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.green-fr [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.green-de [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.green-es [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+------MultipartBoundary--AD6MKN3Ymia4Ip1vfCvaFL6XIihBybGSUUk9Nyg0Rh----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-24151d19-43a8-4b82-975e-3a55108fd6c8@mhtml.blink
+
+@charset "utf-8";
+
+.eudic-tippy-content-container[_ngcontent-ng-c2546567076] { max-width: 250p=
+x !important; }
+
+.eusoft-chrome-extension-popup-menu[_ngcontent-ng-c2546567076] { position: =
+fixed; z-index: 2147483647; top: 50%; }
+
+.eusoft-chrome-extension-popup-menu.eusoft-chrome-extension-popup-menu-left=
+[_ngcontent-ng-c2546567076] { left: 4px; }
+
+.eusoft-chrome-extension-popup-menu.eusoft-chrome-extension-popup-menu-righ=
+t[_ngcontent-ng-c2546567076] { right: 4px; }
+
+.eusoft-chrome-extension-mask-container[_ngcontent-ng-c2546567076] { backgr=
+ound-color: transparent; position: fixed; inset: 0px; z-index: 2147483646; }
+------MultipartBoundary--AD6MKN3Ymia4Ip1vfCvaFL6XIihBybGSUUk9Nyg0Rh------

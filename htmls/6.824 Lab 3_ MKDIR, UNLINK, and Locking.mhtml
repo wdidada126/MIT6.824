@@ -1,0 +1,492 @@
+From: <Saved by Blink>
+Snapshot-Content-Location: https://pdos.csail.mit.edu/archive/6.824-2012/labs/lab-3.html
+Subject: 6.824 Lab 3: MKDIR, UNLINK, and Locking
+Date: Wed, 25 Feb 2026 17:10:47 +0800
+MIME-Version: 1.0
+Content-Type: multipart/related;
+	type="text/html";
+	boundary="----MultipartBoundary--tbg0sc1VsfYczdb7RuXx8fnT2mxXjPUGJDS8T7IKxO----"
+
+
+------MultipartBoundary--tbg0sc1VsfYczdb7RuXx8fnT2mxXjPUGJDS8T7IKxO----
+Content-Type: text/html
+Content-ID: <frame-9A9D98D0A5E4C99E072042C5A7F7F044@mhtml.blink>
+Content-Transfer-Encoding: quoted-printable
+Content-Location: https://pdos.csail.mit.edu/archive/6.824-2012/labs/lab-3.html
+
+<!--?xml version=3D"1.0" encoding=3D"utf-8"?--><!DOCTYPE html PUBLIC "-//W3=
+C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-=
+transitional.dtd"><html xmlns=3D"http://www.w3.org/1999/xhtml" data-eusoft-=
+scrollable-element=3D"1"><head><meta http-equiv=3D"Content-Type" content=3D=
+"text/html; charset=3DUTF-8"><link rel=3D"stylesheet" type=3D"text/css" hre=
+f=3D"cid:css-55e8c3d3-e578-4ff2-88b3-a35c897d6875@mhtml.blink" /><link rel=
+=3D"stylesheet" type=3D"text/css" href=3D"cid:css-02bb6227-6306-4983-ab35-4=
+9c9982472aa@mhtml.blink" />
+  <meta name=3D"generator" content=3D"HTML Tidy for Linux/x86 (vers 12 Apri=
+l 2005), see www.w3.org">
+  <link rel=3D"StyleSheet" href=3D"https://pdos.csail.mit.edu/archive/6.824=
+-2012/labs/style.css" type=3D"text/css">
+
+  <title>6.824 Lab 3: MKDIR, UNLINK, and Locking</title>
+</head>
+
+<body>
+  <div align=3D"center">
+    <h2><a href=3D"https://pdos.csail.mit.edu/archive/6.824-2012/index.html=
+">6.824</a> - Spring 2012</h2>
+  </div>
+
+  <div align=3D"center">
+    <h1>6.824 Lab 3: MKDIR, UNLINK, and Locking</h1>
+  </div>
+
+  <div align=3D"center">
+    <h3>Due: Friday, March 2nd, 5:00pm.</h3>
+  </div>
+  <hr>
+
+<h2>Introduction</h2>
+
+In this lab, you will:
+
+<ul>
+  <li>Add handlers for the MKDIR and UNLINK FUSE operations,</li>
+  <li>Add locking to ensure that concurrent operations
+to the same file/directory from different <tt>yfs_client</tt>s
+occur one at a time.
+	</li>
+</ul>
+
+<h2>Getting Started</h2>
+
+<p>
+First, merge your solution to Lab 2 with the new code for Lab 3.
+The only interesting difference are some new test scripts.
+You can use the following commands to get the
+Lab 3 sources; see the directions for <a href=3D"https://pdos.csail.mit.edu=
+/archive/6.824-2012/labs/lab-2.html">Lab 2</a>
+for more background on git.
+
+</p><pre>% <b>cd lab</b>
+% <b>git commit -am 'my solution to lab2'</b>
+
+Created commit ...
+% <b>git pull</b>
+remote: Generating pack...
+...
+% <b>git checkout -b lab3 origin/lab3</b>
+Branch lab4 set up to track remote branch refs/remotes/origin/lab4.
+Switched to a new branch "lab3"
+% <b>git merge lab2</b>
+</pre>
+
+As before, if git reports any conflicts, edit the files to merge them
+manually, then run <tt><nobr>git commit -a</nobr></tt>.
+
+Since you are building on the previous labs, <font color=3D"red">ensure
+the code in your Lab 3 directory passes all tests for Labs 1 and 2
+before starting this lab</font>.
+
+<h2>Part 1: MKDIR, UNLINK</h2>
+<h3>Part 1: Your Job</h3>
+
+<p>Your job in part 1 is to handle the MKDIR and UNLINK FUSE
+operations.
+Make sure that when you choose the <tt>inum</tt> for a new directory
+created with MKDIR, that <tt>inum</tt> has its most significant bit
+set to 0 (as explained in <a href=3D"https://pdos.csail.mit.edu/archive/6.8=
+24-2012/labs/lab-2.html">Lab 2</a>).
+For MKDIR, you do not have to create "." or ".." entries in the new directo=
+ry
+since the Linux kernel handles them transparently to YFS.
+UNLINK should always free the file's extent; you do not need to
+implement UNIX-style link counts.
+
+</p><p>
+When you're done with Part 1, the following should work:
+
+</p><pre>% <b>./start.sh</b>
+% <b>mkdir yfs1/newdir</b>
+% <b>echo hi &gt; yfs1/newdir/newfile</b>
+% <b>ls yfs1/newdir/newfile</b>
+yfs1/newdir/newfile
+% <b>rm yfs1/newdir/newfile</b>
+% <b>ls yfs1/newdir</b>
+% <b>./stop.sh</b>
+</pre>
+
+<p>If your implementation passes the <tt>test-lab-3-a.pl</tt> script, you a=
+re=20
+done with part 1.  The test script creates a directory, creates and deletes=
+ lots of
+files in the directory, and checks file and directory <tt>mtime</tt>s and <=
+tt>ctime</tt>s. =20
+Note that this is the first test that explicitly checks the correctness of =
+these
+time attributes.  A create should change both the parent directory's <tt>mt=
+ime</tt> and
+<tt>ctime</tt>. Here is a successful run of the tester:
+
+</p><pre>% <b>./start.sh</b>
+% <b>./test-lab-3-a.pl ./yfs1</b>
+mkdir ./yfs1/d3319
+create x-0
+delete x-0
+create x-1
+checkmtime x-1
+...
+delete x-33
+dircheck
+Passed all tests!
+% <b>./stop.sh</b>
+</pre>
+
+<!--
+<p>
+If you're unsure about what FUSE operations this tester will produce,
+check out this <a href=3D"test4a-fuse2yfs1.log">sample fuse2yfs1.log</a>
+(101 KB) for one possible sequence.
+-->
+
+<h2>Part 2: Locking </h2>
+
+Next, you are going to ensure the
+atomicity of file system operations when there are
+multiple <tt>yfs_client</tt> processes sharing a file system.
+Your current implementation does not handle
+concurrent operations correctly.  For example, your <tt>yfs_client</tt>'s c=
+reate method
+probably reads the directory's contents from the extent server, makes some
+changes, and stores the new contents back to the extent server.
+Suppose
+two clients issue simultaneous CREATEs for different file names in the same
+directory via different <tt>yfs_client</tt> processes. Both <tt>yfs_client<=
+/tt> processes might
+fetch the old directory contents at the same time and each might insert the=
+ newly created
+file for its client and write back the new directory contents.  Only
+one of the files would be present in the directory in the end.  The correct=
+ answer,
+however, is for both files to exist.  This is
+one of many potential races.  Others exist: concurrent=20
+CREATE and UNLINK, concurrent MKDIR and UNLINK, concurrent WRITEs, etc.
+
+<p>You should eliminate YFS races by having <tt>yfs_client</tt>
+use your lock server's locks.
+For example, a <tt>yfs_client</tt> should acquire a lock on the
+directory before starting a CREATE,
+and only release the lock after finishing the write of the new information
+back to the extent server. If there are concurrent operations, the locks
+force one of the two operations to delay until the other one has completed.
+All <tt>yfs_client</tt>s must acquire locks from the same lock
+server.=20
+
+</p><h3>Part 2: Your Job</h3>
+
+<p>
+Your job is to add locking to <tt>yfs_client</tt> to ensure
+the correctness of concurrent operations.
+The testers for this part of the lab
+are <tt>test-lab-3-b</tt> and <tt>test-lab-3-c</tt>, source in <tt>test-lab=
+-3-b.c</tt>
+and  <tt>test-lab-3-c.c</tt>.  The testers take two directories as
+arguments, issue concurrent operations in the two directories, and check th=
+at
+the results are consistent with the operations executing in some sequential=
+ order.
+Here's a successful execution of the testers:
+
+</p><pre>% <b>./start.sh</b>
+% <b>./test-lab-3-b ./yfs1 ./yfs2</b>
+Create then read: OK
+Unlink: OK
+Append: OK
+Readdir: OK
+Many sequential creates: OK
+Write 20000 bytes: OK
+Concurrent creates: OK
+Concurrent creates of the same file: OK
+Concurrent create/delete: OK
+Concurrent creates, same file, same server: OK
+test-lab-3-b: Passed all tests.
+% <b>./stop.sh</b>
+%
+% <b>./start.sh</b>
+% <b>./test-lab-3-c ./yfs1 ./yfs2</b>
+Create/delete in separate directories: tests completed OK
+% <b>./stop.sh</b>
+</pre>
+
+<p>
+If you try this before you add locking, it should fail at "Concurrent creat=
+es"
+test in <tt>test-lab-3-b</tt>. If it fails before "Concurrent creates",
+your code may have bugs despite having passed previous testers;
+you should fix them before adding locks.
+
+</p><p>After you are done with part 2, you should also test with=20
+<tt>test-lab-3-a.pl</tt> to make sure you didn't break
+anything. You might also test <tt>test-lab-3-b</tt> with=20
+the same directory for both arguments, to make sure you handle concurrent
+operations correctly with only one <tt>yfs_client</tt> before you go on to =
+test concurrent=20
+operations with two <tt>yfs_client</tt>s.</p>
+
+<!--
+<p>
+If you're unsure about what FUSE operations these two testers will
+produce, check out the following FUSE trace logs:=20
+
+<ul>
+<li> <a href=3D"test4b-fuse2yfs1.log">Test 4b fuse2yfs1.log</a> (220 KB)
+<li> <a href=3D"test4b-fuse2yfs2.log">Test 4b fuse2yfs2.log</a> (132 KB)
+<li> <a href=3D"test4c-fuse2yfs1.log">Test 4c fuse2yfs1.log</a> (120 KB)
+<li> <a href=3D"test4c-fuse2yfs2.log">Test 4c fuse2yfs2.log</a> (120 KB)
+-->
+
+
+
+<h3>Part 2: Detailed Guidance</h3>
+<ul>
+<li>What to lock?
+<p>At one extreme you
+could have a single lock for the whole file system, so that
+operations never proceed in parallel. At the other extreme you
+could lock each entry in a directory, or each field in the
+attributes structure. Neither of these is a good idea! A single
+global lock prevents concurrency that would have been okay, for
+example CREATEs in different directories. Fine-grained locks have
+high overhead and make deadlock likely, since you often need to
+hold more than one fine-grained lock.</p>
+
+<p>You should associate a lock with each inumber.  Use
+the file or directory's <tt>inum</tt> as the name of the lock (i.e. pass th=
+e
+<tt>inum</tt> to <tt>acquire</tt> and
+<tt>release</tt>). The convention should be that any <tt>yfs_client</tt>
+operation should acquire the lock on the file or directory it uses,
+perform the operation, finish updating the extent server (if the
+operation has side-effects), and then release the lock on the <tt>inum</tt>=
+.
+Be careful to release locks even for error returns
+from <tt>yfs_client</tt> operations.=20
+<!---
+You may find adding these acquire and
+release calls a bit tedious.  It's okay to do things the tedious way,
+but feel free to look for ways to make things a bit easier on you.
+Hint: <tt>goto</tt> is not always considered harmful.</p>
+-->
+
+</p><p>You'll use your lock server from Lab 1.
+<tt>yfs_client</tt> should create and use a
+<tt>lock_client</tt> in the same
+way that it creates and uses its <tt>extent_client</tt>.
+</p></li>
+
+<li>Things to watch out for:
+<p>
+This is the first lab that creates files using two different
+YFS-mounted directories.  If you were not careful in earlier labs, you
+may find that the components that assign <tt>inum</tt> for newly-created
+files and directories choose the same identifiers.  One possible way
+to fix this may be to seed the random number generator differently
+depending on the process's <tt>pid</tt>. The provided code has already done
+such seeding for you in the <tt>main</tt> function of <tt>fuse.cc</tt>.
+
+</p><p>
+This is also the first lab that writes null ('\0') characters to files.
+The <tt>std::string(char*)</tt> constructor treats '\0' as
+the end of the string, so if you use that constructor to hold
+file content or the written data, you will have trouble with this lab.
+<font color=3D"red">
+Use the
+<tt>std::string(buf, size)</tt> constructor instead.</font>.
+
+</p></li>
+</ul>
+
+<h3>Handin procedure</h3>
+
+E-mail your code as a gzipped tar file to <a href=3D"mailto:6.824-submit@pd=
+os.csail.mit.edu">6.824-submit@pdos.csail.mit.edu</a>
+by the deadline at the top of the page.  To do this, execute these
+commands:
+
+<pre>% <b>cd ~/lab</b>
+% <b>./stop.sh</b>
+% <b>make clean</b>
+% <b>rm core*</b>
+% <b>rm *log</b>
+% <b>cd ..</b>
+% <b>tar czvf `whoami`-lab3.tgz lab/</b>
+</pre>
+
+or
+
+<pre>% <b>cd ~/6.824/lab</b>
+% <b>make handin</b>
+</pre>
+
+That should produce a file called <nobr><tt>[your_user_name]-lab3.tgz</tt><=
+/nobr> in your
+<tt>lab/</tt> directory.  Attach that file to an email and send it to the 6=
+.824
+submit address.
+
+<hr>
+
+<address>
+Please post questions or comments on <a href=3D"http://piazza.com/">Piazza<=
+/a>.<br>
+
+  Back to <a href=3D"http://pdos.csail.mit.edu/6.824/">6.824
+  home</a>.
+</address>
+
+
+
+
+
+</body><eusoft-chrome-extension-root-en id=3D"eusoft-chrome-extension-id-en=
+" _nghost-ng-c2546567076=3D"" ng-version=3D"18.2.13"><template _ngcontent-n=
+g-c2546567076=3D""></template><!----><!----><!----><app-word-hint-render _n=
+gcontent-ng-c2546567076=3D"" _nghost-ng-c3319869249=3D""><template _ngconte=
+nt-ng-c3319869249=3D""></template><!----><!----></app-word-hint-render><app=
+-translate-render _ngcontent-ng-c2546567076=3D"" _nghost-ng-c2607817495=3D"=
+"><template _ngcontent-ng-c2607817495=3D""></template><!----><translate-ana=
+lyzer _ngcontent-ng-c2607817495=3D""><template></template></translate-analy=
+zer></app-translate-render><app-capture-word _ngcontent-ng-c2546567076=3D""=
+ class=3D"eusoft-chrome-extension-capture-word-container ng-tns-c2615027859=
+-0 ng-star-inserted"><template shadowmode=3D"open"><!----><!----><div class=
+=3D"eusoft-eudic-chrome-extension-explain-popover-container-class ng-tns-c2=
+615027859-0" data-content-script-theme=3D"light"><!----></div></template></=
+app-capture-word><app-translate-failed-retry _ngcontent-ng-c2546567076=3D""=
+ _nghost-ng-c3081775404=3D""><!----></app-translate-failed-retry><!----><!-=
+---></eusoft-chrome-extension-root-en></html><!--  LocalWords:  MKDIR th yf=
+s cd inum mkdir newdir mtime ctime checkmtime buf
+ --><!--  LocalWords:  dircheck CREATEs WRITEs Readdir inumber
+ -->
+------MultipartBoundary--tbg0sc1VsfYczdb7RuXx8fnT2mxXjPUGJDS8T7IKxO----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: https://pdos.csail.mit.edu/archive/6.824-2012/labs/style.css
+
+@charset "utf-8";
+
+body { color: black; background-color: white; font-family: sans-serif; }
+
+.title { text-align: center; }
+
+.subtitle { text-align: center; font-style: italic; }
+
+.author { text-align: center; }
+
+code { font-size: 120%; color: green; }
+
+tt { font-size: 120%; }
+
+pre { font-size: 100%; color: green; margin: 1em; border: 1px dashed; paddi=
+ng: 1em; }
+
+.classic { color: black; }
+------MultipartBoundary--tbg0sc1VsfYczdb7RuXx8fnT2mxXjPUGJDS8T7IKxO----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-02bb6227-6306-4983-ab35-49c9982472aa@mhtml.blink
+
+@charset "utf-8";
+
+.eusoft-eudic-translate-failed-container[_ngcontent-ng-c3081775404] { posit=
+ion: fixed !important; bottom: 50px !important; right: 50px !important; bor=
+der-radius: 5px !important; box-shadow: rgba(0, 0, 0, 0.08) 0px 6px 24px !i=
+mportant; z-index: 2147483647 !important; }
+
+.eusoft-eudic-translate-failed-content-script[_ngcontent-ng-c3081775404] { =
+border: 1px solid rgb(232, 232, 232) !important; background-color: rgb(248,=
+ 250, 254) !important; }
+
+html.light-en [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.light-fr [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.light-de [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.light-es [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.dark-en [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-contai=
+ner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(89, 89, 89) !importa=
+nt; background-color: rgb(33, 33, 37) !important; }
+
+html.dark-fr [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-contai=
+ner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(89, 89, 89) !importa=
+nt; background-color: rgb(33, 33, 37) !important; }
+
+html.dark-de [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-contai=
+ner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(89, 89, 89) !importa=
+nt; background-color: rgb(33, 33, 37) !important; }
+
+html.dark-es [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-contai=
+ner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(89, 89, 89) !importa=
+nt; background-color: rgb(33, 33, 37) !important; }
+
+html.sepia-en [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.sepia-fr [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.sepia-de [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.sepia-es [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.green-en [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.green-fr [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.green-de [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.green-es [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+------MultipartBoundary--tbg0sc1VsfYczdb7RuXx8fnT2mxXjPUGJDS8T7IKxO----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-55e8c3d3-e578-4ff2-88b3-a35c897d6875@mhtml.blink
+
+@charset "utf-8";
+
+.eudic-tippy-content-container[_ngcontent-ng-c2546567076] { max-width: 250p=
+x !important; }
+
+.eusoft-chrome-extension-popup-menu[_ngcontent-ng-c2546567076] { position: =
+fixed; z-index: 2147483647; top: 50%; }
+
+.eusoft-chrome-extension-popup-menu.eusoft-chrome-extension-popup-menu-left=
+[_ngcontent-ng-c2546567076] { left: 4px; }
+
+.eusoft-chrome-extension-popup-menu.eusoft-chrome-extension-popup-menu-righ=
+t[_ngcontent-ng-c2546567076] { right: 4px; }
+
+.eusoft-chrome-extension-mask-container[_ngcontent-ng-c2546567076] { backgr=
+ound-color: transparent; position: fixed; inset: 0px; z-index: 2147483646; }
+------MultipartBoundary--tbg0sc1VsfYczdb7RuXx8fnT2mxXjPUGJDS8T7IKxO------

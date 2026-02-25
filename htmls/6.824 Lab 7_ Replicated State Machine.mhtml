@@ -1,0 +1,1035 @@
+From: <Saved by Blink>
+Snapshot-Content-Location: https://pdos.csail.mit.edu/archive/6.824-2012/labs/lab-7.html
+Subject: 6.824 Lab 7: Replicated State Machine
+Date: Wed, 25 Feb 2026 18:00:38 +0800
+MIME-Version: 1.0
+Content-Type: multipart/related;
+	type="text/html";
+	boundary="----MultipartBoundary--4sdhhZ1WW06tzCSQ2X1yaRajXmLgrjllFTM3oicVeG----"
+
+
+------MultipartBoundary--4sdhhZ1WW06tzCSQ2X1yaRajXmLgrjllFTM3oicVeG----
+Content-Type: text/html
+Content-ID: <frame-9A9D98D0A5E4C99E072042C5A7F7F044@mhtml.blink>
+Content-Transfer-Encoding: quoted-printable
+Content-Location: https://pdos.csail.mit.edu/archive/6.824-2012/labs/lab-7.html
+
+<!--?xml version=3D"1.0" encoding=3D"utf-8"?--><!DOCTYPE html PUBLIC "-//W3=
+C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-=
+transitional.dtd"><html xmlns=3D"http://www.w3.org/1999/xhtml" data-eusoft-=
+scrollable-element=3D"1"><head><meta http-equiv=3D"Content-Type" content=3D=
+"text/html; charset=3DUTF-8"><link rel=3D"stylesheet" type=3D"text/css" hre=
+f=3D"cid:css-7c441070-b655-42e8-9014-4034d70c5ea5@mhtml.blink" /><link rel=
+=3D"stylesheet" type=3D"text/css" href=3D"cid:css-18145298-7819-413a-9336-3=
+4bc26b5bcbc@mhtml.blink" />
+  <meta name=3D"generator" content=3D"HTML Tidy for Linux/x86 (vers 12 Apri=
+l 2005), see www.w3.org">
+  <link rel=3D"StyleSheet" href=3D"https://pdos.csail.mit.edu/archive/6.824=
+-2012/labs/style.css" type=3D"text/css">
+
+  <title>6.824 Lab 7: Replicated State Machine</title>
+</head>
+
+<body>
+  <div align=3D"center">
+    <h2><a href=3D"https://pdos.csail.mit.edu/archive/6.824-2012/index.html=
+">6.824</a> - Spring 2012</h2>
+  </div>
+
+  <div align=3D"center">
+      <h1>6.824 Lab 7: Replicated State Machine</h1>
+  </div>
+
+  <div align=3D"center">
+    <h3>Due: Friday, April 27th, 5:00pm.</h3>
+  </div>
+  <hr>
+
+<h3>Introduction</h3>
+
+<p>In this lab you will replicate your lock server using the
+replicated state machine (RSM) approach (see <a href=3D"https://pdos.csail.=
+mit.edu/archive/6.824-2012/papers/schneider-rsm.pdf">Schneider's RSM paper<=
+/a> for a
+good, but non-required, reference. We have also discussed an <a href=3D"htt=
+ps://pdos.csail.mit.edu/archive/6.824-2012/papers/bressoud-hypervisor.pdf">=
+example
+replicated state machine</a> in Lecture.) In the replicated state machine
+approach, one machine is the master and the others are slaves. The master i=
+s in
+charge of receiving requests from clients and executing them on all replica=
+s.
+To ensure that all replicas have identical state, the replicas must execute=
+ all
+requests in the same order and all requests must produce the same result on=
+ all
+replicas (<i>i.e.</i>, the handlers must be deterministic).  The RSM=20
+uses the Paxos protocol implemented in the previous lab to agree on the=20
+current master and node membership to cope with failed and re-joined replic=
+as.
+
+</p><p>To ensure all requests are executed in a unique total order, the mas=
+ter=20
+assigns each request a <tt>viewstamp</tt> number which dictates the total o=
+rder. =20
+The <tt>viewstamp</tt> consists of two fields, the view number=20
+(obtained from Paxos) and a monotonically increasing sequence number.
+The viewstamps assigned to all RSM requests dictate a total order=20
+among them. In particular, viewstamps with a lower view number=20
+are ordered before those with a higher view number and within the same view
+number, viewstamps with lower seqnos are ordered before those with higher
+seqnos.  How do we guarantee all viewstamps form a unique total order?  Thi=
+s is
+because Paxos guarantees all view numbers form a total order.  Additionally=
+,
+within each view, all nodes agree on the current view's membership and
+thus each RSM node can use the agreed upon membership to agree on a
+unique master who is the only one that can assign each request an
+increasingly seqno to properly order requests within a view.
+
+
+</p><p>The primary task in the lab is building a RSM=20
+library on top of our existing RPC library so that you can=20
+plug in any RPC program you have written so far and replicate
+it.  To ensure the appropriate behavior,
+however, there are certain constraints on the RPC handlers. Most
+importantly, the RPC handlers must run to completion without blocking,
+and be deterministic and idempotent.
+These constraints will ensure that all replicas
+execute all requests in the same order and with the same result.
+Once you have built the RSM library we will
+ask you to replicate the lock server you built in previous labs using RSM.
+
+</p><h3>Getting Started</h3>
+
+<p>Begin by updating your lab directory with the new infrastructure code
+for lab&nbsp;7.
+Since you are building on the past labs, make sure your code
+passes all tests for previous labs before starting in on this lab.=20
+
+</p><pre>% <b>cd ~/lab</b>
+% <b>git commit -am 'my solution to lab6'</b>
+
+Created commit ...
+% <b>git pull</b>
+remote: Generating pack...
+...
+% <b>git checkout -b lab7 origin/lab7</b>
+Branch lab7 set up to track remote branch refs/remotes/origin/lab7.
+Switched to a new branch "lab7"
+% <b>git merge lab6</b>
+</pre>
+
+<p>We provide you with some skeleton code of the RSM library.  The library =
+has
+the client and server class for RSM in files <tt>rsm_client.{cc,h}</tt> and=
+=20
+<tt>rsm.{cc,h}</tt>.
+
+</p><p>The RSM client class (<tt>rsm_client</tt>) is used by a client progr=
+am to
+request service from the master replica in the RSM. The RSM client takes
+in its constructor the address of a known replica, and immediately contacts=
+ the
+node to learn the addresses of all replicas as well as the current master. =
+=20
+The client program (e.g. the <tt>lock_client</tt> class) can use the <tt>ca=
+ll</tt> method on the
+RSM client object (just as if it were an RPC client). The <tt>call</tt> met=
+hod on RSM=20
+client will marshall RSM request and send it via the <tt>rsm_client_protoco=
+l::invoke</tt> RPC to the
+master replica.  (The RPC protocol between the RSM client and RSM server
+(replica) is defined in the <tt>rsm_client_protocol</tt> class in file
+<tt>rsm_protocol.h</tt>).
+
+</p><p>To turn any server program into a replica in the RSM service, your
+application (e.g. <tt>lock_server_cache_rsm</tt> class) creates an RSM serv=
+er object
+(<tt>rsm</tt>) and uses it in place of the normal RPC server <tt>rpcs</tt>
+object. The RSM server constructor creates a <tt>config</tt> object with
+arguments consisting the id of the first replica ever created and the id of
+this server.  The RSM server registers a number of RPC handlers and=20
+spawns off a recovery thread to synchronize state with the master=20
+replica when Paxos has agreed on a stable view.
+
+</p><p>Once the master is in a stable state, it can process
+<tt>invoke</tt> RPCs from RSM clients. For each request,
+the master assigns it the next <tt>viewstamp</tt> number with an=20
+increasing seqno.  The master then issues an invoke RPC on all replicas in =
+the
+current view.  The replicas unmarshall the request, and execute the registe=
+red
+handler. Note that the replicas must execute requests in the same total ord=
+er
+as dictated by the requests' viewstamps <b>without any gaps in seqno</b>.  =
+If
+the master has succeeded in executing a request on <b>all</b> replicas
+(including itself), it will reply to the client.  If the master has encount=
+ered
+replica failures during this process, it should instruct its <tt>config</tt=
+> object to
+initiate a view change.  Occasionally, an RSM client might send its request=
+ to
+a non-master node, in which case the node should reject the client's
+request by replying with <tt>rsm_client_protocol::NOTPRIMARY</tt>. The
+client will then call the <tt>members</tt> RPC to get an updated list
+of replicas.
+
+</p><p>When a failed replica re-joins a running RSM, it has potentially mis=
+sed=20
+many requests and must do a state transfer to bring its state in sync with
+the other replicas before it can process any requests.  Additionally, when =
+the
+master has encountered a failure during the process of invoking the client
+request at various replicas, some replicas might have executed the request=
+=20
+while others not. Thus, the RSM servers must be able to synchronize its sta=
+te
+properly from the agreed upon master node before processing any client
+requests.  We provide some skeleton code to do this; the interface is
+defined in <tt>rsm_state_transfer.h</tt>.
+</p><p>
+</p><h3>Your Job</h3>=20
+
+<p>
+Your job is to turn the cache lock service into a RSM service.
+Our measure of success is surviving failed master and slaves and incorporat=
+ing=20
+re-joined replicas back into a running RSM.  For this lab, you'll need to p=
+ass
+tests 8-16 of <tt>rsm_tester.pl</tt> (as well as making sure all the
+file system tests from previous labs work). =20
+
+</p><p>
+The tester picks random ports for the lock server replicas, and starts
+them up.  It redirects output to log files, named as
+<tt>lock_server-[master_port]-[my_port].log</tt>.  The log for the
+tester is <tt>lock_tester-[master_port].log</tt>. =20
+Here is the output of a successful run of <tt>rsm_tester.pl</tt>:
+</p><pre>% ./rsm_tester.pl 8 9 10 11 12 13 14 15 16
+test8: start 3-process lock service
+...
+./lock_tester: passed all tests successfully
+test9: start 3-process rsm, kill first slave while tester is running
+...
+./lock_tester: passed all tests successfully
+test10: start 3-process rsm, kill second slave while tester is running
+...
+./lock_tester: passed all tests successfully
+test11: start 3-process rsm, kill primary while tester is running
+...
+./lock_tester: passed all tests successfully
+test12: start 3-process rsm, kill first slave at break1, continue with 2, a=
+dd first slave
+...
+./lock_tester: passed all tests successfully
+test13: start 3-process rsm, kill slave at break1 and restart it while lock=
+_tester is running
+...
+./lock_tester: passed all tests successfully
+test14: start 5-process rsm, kill slave break1, kill slave break2
+...
+./lock_tester: passed all tests successfully
+test15: start 5-process rsm, kill slave break1, kill primary break2
+...
+./lock_tester: passed all tests successfully
+test16: start 3-process rsm, partition primary, heal it
+...
+./lock_tester: passed all tests successfully
+tests done
+%
+</pre>
+
+When debugging, you might want to run the tests individually by just specif=
+ying
+a single test number.  You can also specify the same random seed
+values across run to make <tt>rsm_tester.pl</tt>
+choose the same set of random ports. (e.g. <tt>./rsm_tester.pl -s 89362 8</=
+tt>)
+Once your lab works, make sure it is able to pass all (including test 0-7)
+tests of <tt>./rsm_tester.pl</tt> many times in a row. <font color=3D"red">=
+Note that we won't run
+the file system tests for grading to focus on RSM in this lab, although you=
+r
+lab 7 should be able to pass all the tests with slight modification to Make=
+file
+and if previous labs are correct.</font>
+
+<p><b>Important</b>: As in the previous lab, if <tt>rsm_tester.pl</tt> fail=
+s
+during the middle of a test, the remaining <tt>lock_server</tt> processes
+are not killed and the log files are not cleaned up (so you can=20
+debug the causes.). Make sure you do '<tt><nobr>killall lock_server; rm -f =
+*.log</nobr></tt>'=20
+to clean up the lingering processes before running <tt>rsm_tester.pl</tt> a=
+gain.
+
+
+</p><h3>Detailed Guidance</h3>
+
+<h4>Step One: Replicable caching lock server</h4>
+
+<p> At first step, you have to redesign the lock protocol so that the cachi=
+ng
+lock server is replicable.  The implementation of such caching lock server =
+and
+client may differ substantially from the ones in lab 4. Therefore, we sugge=
+st
+you implement them from scratch. We have provided you with the skeleton of =
+the
+caching lock server in <tt>lock_server_cache_rsm.{cc,h}</tt>, and caching l=
+ock
+client in <tt>lock_client_cache_rsm.{cc,h}</tt>. We have also modified
+<tt>lock_smain.cc</tt> and <tt>lock_tester.cc</tt> to use these new classes
+too. <font color=3D"red">Note that you should not include both <tt>lock_ser=
+ver_cache.h</tt>
+and <tt>lock_server_cache_rsm.h</tt> (or <tt>lock_client_cache.h</tt> and
+<tt>lock_client_cache_rsm.h</tt>). </font>
+
+</p><p> The caching lock server should address the following three challeng=
+es in
+order to be replicated. For convenience, in the following context,
+we use <tt>SVR_HDL</tt> to refer "RPC handlers of the caching lock server" =
+(e.g.
+<tt>acquire</tt>, <tt>release</tt>) , and <tt>CLT_HDL</tt> for "RPC
+handlers of the caching lock client" (e.g. <tt>retry</tt>, <tt>revoke</tt>)=
+.
+
+</p><ul>
+
+<li> First, the lock protocol should avoid deadlocks that may be
+caused by locks held by RSM layer. The RSM layer holds the
+<tt>invoke_mutex</tt> while calling <tt>SVR_HDL</tt>
+to guarantee sequential execution of RPC requests (see "Step Two").  As a
+result, the caching lock server can not process more than one RPC request a=
+t
+the same time. This has two implications.=20
+
+<p>
+</p><ul>
+
+<li> First, <tt>SVR_HDL</tt> should not call <tt>CLT_HDL</tt> which may cal=
+l
+another <tt>SVR_HDL</tt> . Such RPC call chain may lead to a deadlock as fo=
+llows.
+Client A sends an <tt>acquire</tt> to
+server, server sends <tt>revoke</tt> to client B in its <tt>acquire</tt>
+handler (with <tt>invoke_mutex</tt> held), client B sends <tt>release</tt> =
+to
+server in <tt>revoke_handler</tt>, then the server blocks forever trying to
+acquire the <tt>invoke_mutex</tt> when dispatching the <tt>release</tt>
+request.
+
+<p>
+ To avoid such deadlock, one approach is to follow
+the rule of "do not call RPCs in an RPC handler", which means you send RPC =
+in
+background threads rather than in <tt>SVR_HDL</tt> or <tt>CLT_HDL</tt>
+directly. We have provided 2 background threads in
+<tt>lock_server_cache_rsm</tt> (<tt>retryer</tt> and <tt>revoker</tt>) and =
+1
+in <tt>lock_client_cache_rsm</tt> (<tt>releaser</tt>) for you. You may find
+<tt>rpc/fifo.h</tt> helpful to the communication between the background
+thread and RPC handlers.
+
+</p><p> Note that there are protocols that use less than 3 background
+threads.  The reason is that sometimes it is benign to call RPC in RPC
+handlers, so that you do not need a background thread.  For example, if the
+server sends a <tt>revoke</tt> in a background thread, then the client's
+<tt>revoke_handler</tt> is OK to send <tt>release</tt> RPC to the server. I=
+n
+this case, the <tt>releaser</tt> thread of the <tt>lock_client_cache_rsm</t=
+t>=20
+is not needed. You are free to devise and use such protocols.
+
+</p></li><li>=20
+Second, one <tt>SVR_HDL</tt> should not wait for the arriving of another
+RPC request. For example, in lab 4, your <tt>lock_server_cache</tt> may sen=
+d a
+<tt>revoke</tt> to the lock owner, and wait for the owner to send a
+<tt>release</tt> RPC to the server. Such design leads to deadlocks in lab 7=
+, and you=20
+should avoid it.=20
+
+</li></ul>
+
+<br>
+
+</li><li> Second, the caching lock client should handle failures of the pri=
+mary lock
+server. The reason is that once a primary fails, the client has no idea whe=
+ther
+its outstanding RPC requests are processed by the new primary or not. =20
+
+<p>
+To handle the primary failure, the client should assign sequence numbers to=
+ all
+requests.  That is each request should have a unique client ID (e.g., a ran=
+dom
+number or the id string) and a sequence number. For an <tt>acquire</tt>, th=
+e
+client picks the first unused sequence number and supplies that sequence nu=
+mber
+as an argument to the <tt>acquire</tt> RPC, along with the client ID. Same =
+as
+lab 4, you probably want to send no additional <tt>acquire</tt>s for the sa=
+me
+lock to the server until the outstanding one has been completed. The
+corresponding <tt>release</tt> (which may be much later because the lock is
+cached) should probably carry the same sequence number as the last
+<tt>acquire</tt>, in case the server needs to tell which <tt>acquire</tt> g=
+oes
+along with this <tt>release</tt>. This approach requires the server to reme=
+mber
+at most one sequence number per client per lock. <font color=3D"red">The se=
+rver
+should discard out-of-date requests, but must reply consistently if the
+request is a duplication of the latest request from the same client. </font=
+>
+
+</p><p>
+We have defined the type of sequence number as <tt>lock_protocol::xid_t</tt=
+>,
+and added the sequence number argument into the RPC handler in both
+<tt>lock_server_cache_rsm</tt> and <tt>lock_client_cache_rsm</tt>.
+
+</p></li><li> Third, in case of no failure, the state of the caching lock s=
+erver should
+be consistent.  Such requirement has two implications. First, input that is
+applied to all replicas should change the state in the same way.  Second, i=
+nput
+that is only applied to the primary should not change the state of the prim=
+ary.
+Such input includes the response of the <tt>revoke</tt> or <tt>retry</tt> R=
+PC,
+because only primary can send RPCs to client and receive the RPC responses =
+from
+the client.
+
+</li></ul>
+
+<p> Upon completion of step one, you should be able to pass lab1 test using
+<tt>lock_server</tt> and <tt>lock_tester</tt>. You should provide the same =
+port
+twice to start the <tt>lock_server</tt> (unless you temporarily change
+<tt>lock_smain.cc</tt> for this step to accept only one argument). A succes=
+ful
+run looks like this:
+
+</p><pre>./lock_server 3772 3772 &amp;
+...
+./lock_tester 3772
+...
+lock_tester: passed all tests sucessfully
+</pre>
+
+<font color=3D"red">Note that if you copy the code from
+<tt>lock_server_cache</tt> to <tt>lock_server_cache_rsm</tt>, you may see a
+segmentation fault because <tt>lock_server_cache_rsm::lu</tt> is NULL in
+this step. To fix this, just check for a non-NULL value before using lu.</f=
+ont>
+
+<h4>Step Two: RSM without failures</h4>
+
+<font color=3D"red">Before starting Step Two, make sure you finished Step O=
+ne.
+Then comment out the "#define STEP_ONE" line in <tt>lock_main.cc</tt> so th=
+at
+the <tt>lock_server</tt> uses rsm layer from now on.</font>
+
+<p>
+In this step, just get the RSM working, assuming that none of the replicas
+will fail.  The basic protocol is:
+
+</p><ul>
+<li> The RSM client sends its request to the master by calling
+  the <tt>invoke</tt> RPC.
+</li><li> The master assigns the client request the next viewstamp in
+  sequence, and sends the <tt>invoke</tt> RPC to each slave.
+</li><li> If the request has the expected viewstamp, the slave executes the=
+ request locally and replies OK to the master.
+</li><li> The master executes the request locally, and replies back to the =
+client.
+</li></ul>
+
+This will involve filling in the various functions in <tt>rsm.cc</tt> menti=
+oned
+above. In particular:
+<ul>
+<li><p><tt>rsm::client_invoke()</tt>.  This RPC handler is called by a clie=
+nt=20
+to send a new RSM request to the master.  If this RSM replica is=20
+undergoing Paxos view changes (i.e. <tt>inviewchange</tt> is true), it shou=
+ld
+reply with <tt>rsm_client_protocol::BUSY</tt> to tell the client to try aga=
+in
+later.  If this RSM replica is not the master, it
+should reply with the <tt>rsm_client_protocol::NOTPRIMARY</tt> status. =20
+If it is the master, it first assigns=20
+the RPC the next viewstamp number in sequence, and send an <tt>invoke</tt> =
+RPC to all=20
+slaves in the current view. As in the previous lab, you should supply a tim=
+eout to the <tt>invoke</tt> RPC in case any of the slaves have
+died.
+To execute a RSM request, you need to use the
+provided method <tt>execute()</tt> which unmarshalls the RSM representation=
+ of a
+client's RPC and executes it using the registered handler.=20
+
+</p><p>
+The master must ensure that all client requests are executed in order
+at all slaves.  One way to achieve this is for the master to process
+each request serially in lockstep.  An easy way to ensure that
+requests are processed one at a time is to hold a mutex
+in <tt>client_invoke()</tt> while a request is being
+processed. However, it would be a bad idea to hold <tt>rsm_mutex</tt>
+while calling the <tt>invoke</tt> RPC, since the <tt>rsm_mutex</tt>
+protects the internal data structures of the RSM as well, and nothing
+else can happen in the RSM while that mutex is held. Instead, you can
+hold a separate mutex called <tt>invoke_mutex</tt>, which is
+used <i>only</i> to serialize calls to <tt>client_invoke()</tt>.
+You need to be careful of two things if you serialize requests this
+way. First, you shouldn't hold <tt>rsm_mutex</tt> across RPCs. Second,
+you shouldn't try to acquire <tt>invoke_mutex</tt> while you are
+holding <tt>rsm_mutex</tt>, since that would effectively cause you to
+hold <tt>rsm_mutex</tt> for the duration of an RPC.
+
+</p><p>
+Once all slaves in the current membership list reply
+successfully, the master can execute the invoked RPC locally and reply succ=
+ess
+to the client.  If the invoke RPC on a slave fails, the primary returns=20
+<tt>rsm_client_protocol::BUSY</tt> so that the <tt>rsm_client</tt> could=20
+resend the request to the new primary later. The slave failure indicated by=
+ the
+time out would be picked up by the config layer to form a new view, allowin=
+g
+the system to make progress. Apparently we are assuming that the failure
+is caused by a crash of the slave; otherwise the system may hang up since=
+=20
+the replicas are probably inconsistent from now on. <font color=3D"red">
+Thus, you have to set the RPC timeout sufficiently large to avoid any other=
+=20
+conditions that could have caused the RPC time out. The staff implemnetatio=
+n is able
+to pass the tests using timeout of 1 second.</font>
+
+</p></li><li><p><tt>rsm::invoke()</tt>. This RPC handler is invoked on slav=
+es by the
+master.  A slave must ensure the request has the expected sequence number
+before executing it locally and reply back to the master.  It should also
+ensure that the slave is in a stable view (<tt>rsm::inviewchange</tt> is fa=
+lse) and
+it is indeed a slave under current view; if not, it should reply with an er=
+ror.
+
+</p></li><li><p>The <tt>rsm::inviewchange</tt> variable keeps track of whet=
+her the current replica has=20
+successfully synchronized its state with the current master upon the latest=
+ view change.  If=20
+a node has not finished state synchronization, it should not process any RS=
+M requests. For this=20
+first step, we do not yet worry about replica failures nor state
+synchronization.
+</p></li></ul>
+
+
+To change your lock server/client to use the RSM objects:
+<ul>
+<li><p>Eliminate any randomness in the lock server if there is any, or
+at the very least make sure the random number generator in each replica is
+seeded with the same value.=20
+
+</p></li><li><p><tt>lock_server_cache_rsm</tt> has been modified to take in=
+ a <tt>rsm</tt>
+object in its constructor (e.g., as a pointer) and save it, so that
+each server can inquire about its master status using the
+<tt>rsm::amiprimary()</tt> method.  Only the primary <tt>lock_server_cache_=
+rsm</tt> should=20
+communicate directly with the client. Therefore, you should modify <tt>lock=
+_server_cache_rsm</tt> to=20
+check if it is the master before communicating with the lock client(s).
+
+</p></li><li><p>Modify <tt>lock_client_cache_rsm</tt> to create a <tt>rsm_c=
+lient</tt> object in its constructor.
+Then make <tt>lock_client_cache_rsm</tt> to use the <tt>rsm_client</tt> obj=
+ect to=20
+perform its RPCs, in place of the old <tt>rpcc</tt> object (no longer neede=
+d).=20
+The <tt>lock_client_cache_rsm</tt> sends RPCs as usual with the <tt>call</t=
+t> method of the <tt>rsm_client</tt> object.=20
+The method will further call <tt>rsm_client::invoke</tt> with marshalled re=
+quest. =20
+</p></li></ul>
+
+<p> Upon completion of step two, you should
+be able to pass '<tt>./rsm_tester.pl 8</tt>'. This test starts three <tt>lo=
+ck_server</tt>s one after=20
+another, waits for Paxos to reach an agreement, then performs tests on the =
+lock service=20
+using <tt>lock_tester</tt>.
+
+
+
+
+</p><h4>Step Three: Cope with Backup Failures and Implement state transfer<=
+/h4>
+
+<p>In this step, you will handle node failures as well as joins in a runnin=
+g RSM.
+Upon detecting failure or a new node joining, the underlying Paxos protocol=
+ is=20
+kicked into action.  When Paxos has reached an agreement on the next new vi=
+ew,=20
+it calls the rsm object's <tt>commit_change()</tt> to indicate that a new v=
+iew is formed.
+When a new view is first formed, the <tt>rsm::inviewchange</tt> variable is=
+ set to true,=20
+indicating that this node needs to recover its RSM state before processing =
+any=20
+RSM requests again.  Recovery is done in a separate=20
+<tt>recoverythread</tt> in the <tt>rsm::recovery()</tt> method.
+
+</p><p>After a view change, each replica should recover by transferring sta=
+te from
+the master. Its state must be identical to the master's before
+processing any RSM requests in the new view. Once recovery is finished, the=
+ replica
+should set its <tt>rsm::inviewchange</tt> variable to false to allow the
+processing of RSM requests. The master should not send any requests to
+the backups until all the backups have recovered.
+
+</p><p>To implement state transfer, first make <tt>lock_server_cache_rsm</t=
+t> into a subclass of=20
+<tt>rsm_state_transfer</tt> interface.  Second, implement the
+<tt>marshal_state</tt> and <tt>unmarshal_state</tt> methods for
+<tt>lock_server_cache_rsm</tt>.  Use the YFS RPC marshalling code to=20
+turn various internal state into strings and vice versa.=20
+For example, if state of your lock
+server consists of a=20
+<tt>std::map</tt> called <tt>locks</tt> that mapped
+lock name (<tt>std::string</tt>) to a list of clients waiting to grab the l=
+ock
+(<tt>std::vector</tt>), the code might look roughly as follows:
+
+</p><pre>
+std::string=20
+lock_server_cache_rsm::marshal_state() {
+
+  // lock any needed mutexes
+  marshall rep;
+  rep &lt;&lt; locks.size();
+  std::map&lt; std::string, std::vector &gt;::iterator iter_lock;
+  for (iter_lock =3D locks.begin(); iter_lock !=3D locks.end(); iter_lock++=
+) {
+    std::string name =3D iter_lock-&gt;first;
+    std::vector vec =3D locks[name];
+    rep &lt;&lt; name;
+    rep &lt;&lt; vec;
+  }
+  // unlock any mutexes
+  return rep.str();
+
+}
+
+void=20
+lock_server_cache_rsm::unmarshal_state(std::string state) {
+
+  // lock any needed mutexes
+  unmarshall rep(state);
+  unsigned int locks_size;
+  rep &gt;&gt; locks_size;
+  for (unsigned int i =3D 0; i &lt; locks_size; i++) {
+    std::string name;
+    rep &gt;&gt; name;
+    std::vector vec;
+    rep &gt;&gt; vec;
+    locks[name] =3D vec;
+  }
+  // unlock any mutexes
+}
+
+
+</pre>
+
+<p>In the <tt>lock_server_cache_rsm</tt> constructor, call the
+<tt>rsm</tt>'s <tt>set_state_transfer</tt> method with <tt>this</tt>
+as the argument so that <tt>rsm</tt> can call <tt>lock_server_cache_rsm</tt=
+>'s
+<tt>marshal_state</tt> and <tt>unmarshal_state</tt> function later.=20
+
+</p><p> Then you have to implement the following functions to syncrhonize t=
+he
+states among primary and backups.
+</p><ul>
+<li><tt>rsm::sync_with_backups</tt>. After a view change, the recovery thre=
+ad
+of the new primary calls
+this function to wait until all backups the the new view. The primary has t=
+o
+wait because it cannot process any request until all backups are synchroniz=
+ed
+with the new primary.
+
+</li><li><tt>rsm::sync_with_primary</tt>. After a view change,
+the recovery thread on each of the backups calls this function to synchroni=
+ze with
+the new primary.
+
+</li><li><tt>rsm::statetransferdone</tt>. Once the slave has synchronized w=
+ith
+the primary, it calls this function to inform the primary that it has
+syncrhonized.
+
+</li><li><tt>rsm::transferdonereq</tt>. This is the corresponding RPC handl=
+er
+of the above RPC call. The primary keeps track of the number of synchronize=
+d
+backups in this function, and wakes up the recovery thread once all has
+syncrhonized so that the primary can start processing requests from client.
+</li></ul>
+
+See the comment in these functions for more instructions.
+
+<p>Now you should be able to pass '<tt><nobr>./rsm_tester.pl 9 10</nobr></t=
+t>'.
+These tests starts three lock servers and kills or restarts the second
+slave while running the <tt>lock_tester</tt> simultaneously.=20
+
+
+
+</p><h4>Step Four: Cope with Primary Failures</h4>
+
+The <tt>rsm_client::invoke()</tt> method handles two special cases.
+First, if the replica that the client sends the <tt>invoke</tt> RPC to
+is no longer the primary, that replica
+returns <tt>rsm_client_protocol::NOTPRIMARY</tt>. In this case, the
+client calls <tt>init_members()</tt>, which sends a <tt>members</tt>
+RPC to the old primary to update its list of replicas. Then the client
+retries its request.
+
+<p>
+The second case is where the replica isn't responding at all (so
+the <tt>invoke</tt> RPC fails). In this case, <tt>init_members()</tt>
+won't work because the <tt>members</tt> RPC will also fail. In this
+case, the client calls <tt>rsm_client::primary_failure()</tt>, which
+should forget about the failed primary and choose a different replica
+as the new primary to contact with. Then <tt>invoke()</tt> should retry
+as before.
+
+</p><p>
+We have given you most of the code you need. Your job is simply to
+write <tt>rsm_client::primary_failure()</tt> to handle the second
+case.
+
+</p><p>The challenge of dealing with primary failure is handling
+duplicated requests. Consider what happens if the primary
+crashes while some replicas have executed the request and others have
+not. A view change will occur, and the client will re-send the
+request in the new view. If the new primary has already executed the
+request, the RPC handler in <tt>lock_server_cache_rsm</tt> will be invoked
+twice. A good way to handle these cases is to assign sequence numbers to al=
+l
+requests, as described in "Step One". Since you have already implemented
+sequence numbers in Step One, now it is a good time to test whether you are
+using sequence numbers correctly to tolerate primary failures.
+
+</p><p>
+Note that if the primary crashes while (or shortly after) executing
+an <tt>acquire</tt> or <tt>release</tt> RPC, after recovery it will be
+ambiguous as to whether the appropriate <tt>retry</tt>
+or <tt>revoke</tt> RPCs were sent in the previous view.
+A simple way to address this is to have clients that are waiting to
+acquire locks retry automatically every 3 seconds, even in the absence
+of a <tt>retry</tt> RPC. The servers can use sequence numbers
+to identify duplicate <tt>acquire</tt> requests; however, when a server get=
+s a
+duplicate <tt>acquire</tt> and another client holds the lock, it
+should send another <tt>revoke</tt> anyway, in case the
+first <tt>revoke</tt> got lost due to a crash.=20
+
+</p><p>Now you should be able to pass '<tt><nobr>./rsm_tester.pl 11</nobr><=
+/tt>'.
+This test starts three lock servers and kills the primary
+while running the <tt>lock_tester</tt> simultaneously.=20
+
+</p><h4>Step Five: Complicated failures</h4>
+
+<p>
+In <tt>rsm::client_invoke</tt>, place the function <tt>breakpoint1()</tt>=
+=20
+after the master has finished invoking RSM request on one slave and before
+it moves on to issue RSM request to other slaves.  In the three server test
+scenario (test 12), this causes the master to fail after one slave has fini=
+shed
+the latest request and the other slave has not seen the latest request yet.
+If you have implemented recovery correctly, the set of RSM servers in the n=
+ew
+view resolve this case correctly and all master/slaves will start executing
+requests from identical state. Note that since the <tt>rsm_client</tt> has =
+not=20
+heard back from the master in the previous view, it will retry its request=
+=20
+in the new view (in <tt>rsm_client::invoke()</tt>).  This might cause=20
+your lock server to execute duplicate requests, but that is OK as long as=
+=20
+these requests are idempotent, meaning they can be executed multiple times=
+=20
+in a row without affecting correctness.
+
+</p><p>
+Next, place the function <tt>breakpoint1()</tt> in <tt>rsm::invoke</tt> jus=
+t after=20
+the slave has finished executing a request.  In the three server test
+scenario (test 13), this causes the second slave to fail after it has finis=
+hed
+the latest request.  Again, if you have implemented recovery correctly, the=
+ set of RSM servers in the new=20
+view resolve this case correctly and all master/slaves will start executing
+requests from identical state.
+
+</p><p>
+Then, call the function <tt>breakpoint2()</tt> in
+<tt>rsm::commit_change</tt> just before exiting the function and only when =
+the
+node is part of the new view.  Test 14 starts five server, kills one slave =
+at
+<tt>breakpoint1()</tt> and promptly kills another at <tt>breakpoint2()</tt>=
+.
+
+</p><p>
+Test 15 is exactly like test 14 except that the primary is killed at
+<tt>breakpoint2()</tt> instead of a slave.
+
+</p><p>
+Finally, add the function <tt>partition1()</tt> right after
+<tt>breakpoint1()</tt> in <tt>rsm::client_invoke</tt>.  This function induc=
+es a
+partition that splits the node away from the rest of the nodes.  In the thr=
+ee
+server test scenario (test 16), this causes the primary to loose communicat=
+ion
+with the two slaves and allows the slaves to form a new view.  After the sl=
+aves
+from a new view, the partition is healed and the old primary is allowed to =
+join
+the system.  Your code should be able to deal with the primary being
+partitioned from the slaves and with an old primary joining the system whic=
+h
+has elected a new primary.
+
+</p><p>
+If your RSM works correctly, you should be able to pass '<tt>./rsm_tester.p=
+l 12 13 14 15 16</tt>'.
+
+
+</p><h3>Challenges</h3>
+
+Here are a few things you can do if you finish the lab early and feel
+like improving your code.  These are <b>not</b> required, and there
+are no associated bonus points, but some of you may find them
+interesting.
+
+<ul>
+
+<li> There's no reason that the slaves replicas must receive the RSM reques=
+ts and=20
+execute in series (in lockstep).  You may be able to improve performance by
+executing them in parallel. However, this could complicate recovery.
+
+</li><li> Modify the RSM library to log its received requests on disk. This=
+ way, even=20
+if all lock servers fail simultaneously, we can recover them later.
+
+</li><li> Use the RSM library to replicate the extent server.
+As a further extension, you could improve performance by using a
+recovery scheme that is more efficient than transferring all of the
+file system state.
+
+</li></ul>
+<p>
+</p><p>
+
+</p><h3>Handin procedure</h3>
+
+E-mail your code as a gzipped tar file to <a href=3D"mailto:6.824-submit@pd=
+os.csail.mit.edu">6.824-submit@pdos.csail.mit.edu</a>
+by the deadline at the top of the page.  To do this, execute these
+commands:
+
+<pre>% <b>cd ~/lab</b>
+% <b>./stop.sh</b>
+% <b>make clean</b>
+% <b>rm core.*</b>
+% <b>rm *.log</b>
+% <b>cd ..</b>
+% <b>tar czvf `whoami`-lab7.tgz lab/</b>
+</pre>
+
+or
+
+<pre>% <b>cd ~/6.824/lab</b>
+% <b>make handin</b>
+</pre>
+
+That should produce a file called [your_user_name]-lab7.tgz in your
+<tt>lab/</tt> directory.  Attach that file to an email and send it to the 6=
+.824
+submit address.
+<hr>
+
+<address>
+Please post questions or comments on <a href=3D"http://piazza.com/">Piazza<=
+/a>.<br>
+
+Back to <a href=3D"http://pdos.csail.mit.edu/6.824/">6.824 home</a>.
+</address>
+  <!--  LocalWords:  ccfs filehandle RPCs cd mkdir cp wget nc cc blockdbd D=
+BG dir
+ -->
+  <!--  LocalWords:  localhost blockdbc blockdb ihash fs callback
+ -->
+
+
+
+</body><eusoft-chrome-extension-root-en id=3D"eusoft-chrome-extension-id-en=
+" _nghost-ng-c2546567076=3D"" ng-version=3D"18.2.13"><template _ngcontent-n=
+g-c2546567076=3D""></template><!----><!----><!----><app-word-hint-render _n=
+gcontent-ng-c2546567076=3D"" _nghost-ng-c3319869249=3D""><template _ngconte=
+nt-ng-c3319869249=3D""></template><!----><!----></app-word-hint-render><app=
+-translate-render _ngcontent-ng-c2546567076=3D"" _nghost-ng-c2607817495=3D"=
+"><template _ngcontent-ng-c2607817495=3D""></template><!----><translate-ana=
+lyzer _ngcontent-ng-c2607817495=3D""><template></template></translate-analy=
+zer></app-translate-render><app-capture-word _ngcontent-ng-c2546567076=3D""=
+ class=3D"eusoft-chrome-extension-capture-word-container ng-tns-c2615027859=
+-0 ng-star-inserted"><template shadowmode=3D"open"><!----><!----><div class=
+=3D"eusoft-eudic-chrome-extension-explain-popover-container-class ng-tns-c2=
+615027859-0" data-content-script-theme=3D"light"><!----></div></template></=
+app-capture-word><app-translate-failed-retry _ngcontent-ng-c2546567076=3D""=
+ _nghost-ng-c3081775404=3D""><!----></app-translate-failed-retry><!----><!-=
+---></eusoft-chrome-extension-root-en></html>
+------MultipartBoundary--4sdhhZ1WW06tzCSQ2X1yaRajXmLgrjllFTM3oicVeG----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: https://pdos.csail.mit.edu/archive/6.824-2012/labs/style.css
+
+@charset "utf-8";
+
+body { color: black; background-color: white; font-family: sans-serif; }
+
+.title { text-align: center; }
+
+.subtitle { text-align: center; font-style: italic; }
+
+.author { text-align: center; }
+
+code { font-size: 120%; color: green; }
+
+tt { font-size: 120%; }
+
+pre { font-size: 100%; color: green; margin: 1em; border: 1px dashed; paddi=
+ng: 1em; }
+
+.classic { color: black; }
+------MultipartBoundary--4sdhhZ1WW06tzCSQ2X1yaRajXmLgrjllFTM3oicVeG----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-18145298-7819-413a-9336-34bc26b5bcbc@mhtml.blink
+
+@charset "utf-8";
+
+.eusoft-eudic-translate-failed-container[_ngcontent-ng-c3081775404] { posit=
+ion: fixed !important; bottom: 50px !important; right: 50px !important; bor=
+der-radius: 5px !important; box-shadow: rgba(0, 0, 0, 0.08) 0px 6px 24px !i=
+mportant; z-index: 2147483647 !important; }
+
+.eusoft-eudic-translate-failed-content-script[_ngcontent-ng-c3081775404] { =
+border: 1px solid rgb(232, 232, 232) !important; background-color: rgb(248,=
+ 250, 254) !important; }
+
+html.light-en [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.light-fr [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.light-de [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.light-es [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.dark-en [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-contai=
+ner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(89, 89, 89) !importa=
+nt; background-color: rgb(33, 33, 37) !important; }
+
+html.dark-fr [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-contai=
+ner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(89, 89, 89) !importa=
+nt; background-color: rgb(33, 33, 37) !important; }
+
+html.dark-de [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-contai=
+ner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(89, 89, 89) !importa=
+nt; background-color: rgb(33, 33, 37) !important; }
+
+html.dark-es [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-contai=
+ner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(89, 89, 89) !importa=
+nt; background-color: rgb(33, 33, 37) !important; }
+
+html.sepia-en [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.sepia-fr [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.sepia-de [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.sepia-es [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.green-en [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.green-fr [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.green-de [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+
+html.green-es [_nghost-ng-c3081775404] .eusoft-eudic-translate-failed-conta=
+iner[_ngcontent-ng-c3081775404] { border: 1px solid rgb(232, 232, 232) !imp=
+ortant; background-color: rgb(248, 250, 254) !important; }
+------MultipartBoundary--4sdhhZ1WW06tzCSQ2X1yaRajXmLgrjllFTM3oicVeG----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-7c441070-b655-42e8-9014-4034d70c5ea5@mhtml.blink
+
+@charset "utf-8";
+
+.eudic-tippy-content-container[_ngcontent-ng-c2546567076] { max-width: 250p=
+x !important; }
+
+.eusoft-chrome-extension-popup-menu[_ngcontent-ng-c2546567076] { position: =
+fixed; z-index: 2147483647; top: 50%; }
+
+.eusoft-chrome-extension-popup-menu.eusoft-chrome-extension-popup-menu-left=
+[_ngcontent-ng-c2546567076] { left: 4px; }
+
+.eusoft-chrome-extension-popup-menu.eusoft-chrome-extension-popup-menu-righ=
+t[_ngcontent-ng-c2546567076] { right: 4px; }
+
+.eusoft-chrome-extension-mask-container[_ngcontent-ng-c2546567076] { backgr=
+ound-color: transparent; position: fixed; inset: 0px; z-index: 2147483646; }
+------MultipartBoundary--4sdhhZ1WW06tzCSQ2X1yaRajXmLgrjllFTM3oicVeG------
