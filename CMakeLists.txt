@@ -7,7 +7,12 @@ project(MIT6.824_cpp
         LANGUAGES C CXX
 )
 
-add_subdirectory(src/kvRaft)
-add_subdirectory(src/MapReduce)
-add_subdirectory(src/Raft)
-add_subdirectory(src/shardKv)
+# 检测操作系统
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_subdirectory(src/kvRaft)
+    add_subdirectory(src/MapReduce)
+    add_subdirectory(src/Raft)
+    add_subdirectory(src/shardKv)
+else()
+    message(STATUS "${CMAKE_SYSTEM_NAME} 系统，跳过 Linux 专用模块")
+endif()
